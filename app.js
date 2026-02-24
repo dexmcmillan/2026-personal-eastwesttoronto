@@ -284,11 +284,11 @@ function updateHeatmapLabels(eastCounts, westCounts) {
     heatmapLabelMarkers.push(marker);
   }
 
-  for (const b of bands.values()) {
+  // For each band, find connected components (4-connected grid neighbours)
+  // and place one label per component.
+  for (const [key, b] of bands.entries()) {
     const eastPct = Math.round((b.e / b.total) * 100);
     const westPct = 100 - eastPct;
-    const lat = b.sumLat / b.count;
-    const lng = b.sumLng / b.count;
 
     let html;
     if (eastPct === 100) {
@@ -296,9 +296,42 @@ function updateHeatmapLabels(eastCounts, westCounts) {
     } else if (westPct === 100) {
       html = `<span class="heatmap-label-inner west-label">100%<span class="heatmap-label-sub">say west</span></span>`;
     } else {
-      html = `<span class="heatmap-label-inner contested-label">${westPct}% west / ${eastPct}% east<span class="heatmap-label-sub">contested</span></span>`;
+      html = `<span class="heatmap-label-inner contested-label">${westPct}%W / ${eastPct}%E<span class="heatmap-label-sub">contested</span></span>`;
     }
-    placeLabel(lat, lng, html);
+
+    // Build a set of cell indices in this band
+    const inBand = new Uint8Array(GRID_COLS * GRID_ROWS);
+    for (let i = 0; i < GRID_COLS * GRID_ROWS; i++) {
+      if (!inTorontoMask[i]) continue;
+      const e = eastCounts[i], w = westCounts[i];
+      if (e + w === 0) continue;
+      if (`${e}/${e + w}` === key) inBand[i] = 1;
+    }
+
+    // BFS to find connected components
+    const visited = new Uint8Array(GRID_COLS * GRID_ROWS);
+    for (let start = 0; start < GRID_COLS * GRID_ROWS; start++) {
+      if (!inBand[start] || visited[start]) continue;
+      // BFS from this cell
+      const queue = [start];
+      visited[start] = 1;
+      let sumLng = 0, sumLat = 0, count = 0;
+      let qi = 0;
+      while (qi < queue.length) {
+        const idx = queue[qi++];
+        sumLng += cellCentroids[idx * 2];
+        sumLat += cellCentroids[idx * 2 + 1];
+        count++;
+        const r = Math.floor(idx / GRID_COLS);
+        const c = idx % GRID_COLS;
+        for (const [nr, nc] of [[r-1,c],[r+1,c],[r,c-1],[r,c+1]]) {
+          if (nr < 0 || nr >= GRID_ROWS || nc < 0 || nc >= GRID_COLS) continue;
+          const ni = nr * GRID_COLS + nc;
+          if (inBand[ni] && !visited[ni]) { visited[ni] = 1; queue.push(ni); }
+        }
+      }
+      placeLabel(sumLat / count, sumLng / count, html);
+    }
   }
 }
 
