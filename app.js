@@ -32,16 +32,27 @@ const map = L.map('map', {
   tap: false,
 }).setView(TORONTO_CENTER, TORONTO_ZOOM);
 
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
   attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
   maxZoom: 19,
   opacity: 1,
 }).addTo(map);
 
-// Pane for mask — sits above tiles but below drawn lines
+// Pane for mask — sits above tiles but below labels
 map.createPane('maskPane');
 map.getPane('maskPane').style.zIndex = 300;
 map.getPane('maskPane').style.pointerEvents = 'none';
+
+// Pane for street labels — sits above the mask so labels show through
+map.createPane('labelsPane');
+map.getPane('labelsPane').style.zIndex = 650;
+map.getPane('labelsPane').style.pointerEvents = 'none';
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
+  maxZoom: 19,
+  opacity: 1,
+  pane: 'labelsPane',
+}).addTo(map);
 
 // ── State ──────────────────────────────────────────────────────────────────
 let torontoFeature = null;   // GeoJSON Feature (Polygon) for city boundary
