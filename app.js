@@ -271,54 +271,92 @@ function updateSubmissionCount(count) {
 }
 
 // ── Line-splitting logic ───────────────────────────────────────────────────
-function extendLineBeyondBoundary(points) {
-  const [minLng, minLat, maxLng, maxLat] = gridBbox;
-  const diag = Math.hypot(maxLng - minLng, maxLat - minLat) * 2;
 
-  function extend(from, towards, dist) {
-    // points are [lat, lng]; work in lng/lat space
-    const dx = towards[1] - from[1];
-    const dy = towards[0] - from[0];
-    const len = Math.hypot(dx, dy);
-    if (len === 0) return from;
-    return [from[0] - (dy / len) * dist, from[1] - (dx / len) * dist];
+// Build a half-plane mask polygon on one side of the drawn line.
+// We extend the line far past the bbox, then close a polygon around
+// one side of it (the "east" half = right side of north-to-south line).
+function buildSideMask(points, side) {
+  // points are [lat, lng]; convert to [lng, lat] for geometry
+  const [minLng, minLat, maxLng, maxLat] = gridBbox;
+  const pad = Math.max(maxLng - minLng, maxLat - minLat) * 3;
+
+  // Direction vector from first to last point (in lng/lat space)
+  const first = [points[0][1],              points[0][0]];
+  const last  = [points[points.length-1][1], points[points.length-1][0]];
+  const dx = last[0] - first[0];
+  const dy = last[1] - first[1];
+  const len = Math.hypot(dx, dy);
+  if (len === 0) return null;
+  const ux = dx / len;
+  const uy = dy / len;
+
+  // Extend line endpoints well past the bbox
+  const startExt = [first[0] - ux * pad, first[1] - uy * pad];
+  const endExt   = [last[0]  + ux * pad, last[1]  + uy * pad];
+
+  // Perpendicular points far to each side
+  const perpDist = pad;
+  // Right side of direction vector: rotate (ux,uy) by -90° → (uy, -ux)
+  const rightStart = [startExt[0] + uy * perpDist, startExt[1] - ux * perpDist];
+  const rightEnd   = [endExt[0]   + uy * perpDist, endExt[1]   - ux * perpDist];
+  const leftStart  = [startExt[0] - uy * perpDist, startExt[1] + ux * perpDist];
+  const leftEnd    = [endExt[0]   - uy * perpDist, endExt[1]   + ux * perpDist];
+
+  // All the drawn points in [lng, lat]
+  const lineCoords = points.map(([lat, lng]) => [lng, lat]);
+
+  let ring;
+  if (side === 'right') {
+    ring = [startExt, ...lineCoords, endExt, rightEnd, rightStart, startExt];
+  } else {
+    ring = [startExt, ...lineCoords, endExt, leftEnd, leftStart, startExt];
   }
 
-  const startExt = extend(points[0], points[1], diag);
-  const endExt   = extend(points[points.length - 1], points[points.length - 2], diag);
-  return [startExt, ...points, endExt];
+  try {
+    return turf.polygon([ring]);
+  } catch (e) {
+    return null;
+  }
 }
 
 function splitTorontoPolygon(drawnPoints) {
-  const extended = extendLineBeyondBoundary(drawnPoints);
-  // Convert [lat, lng] points to [lng, lat] for GeoJSON/Turf
-  const lineCoords = extended.map(([lat, lng]) => [lng, lat]);
-  const line = turf.lineString(lineCoords);
+  if (drawnPoints.length < 2) return null;
 
-  let pieces;
+  // Determine which side is "east" (higher average longitude)
+  // by checking a point to the right of the overall direction
+  const first = drawnPoints[0];
+  const last  = drawnPoints[drawnPoints.length - 1];
+  const dx = last[1] - first[1];   // lng diff
+  const dy = last[0] - first[0];   // lat diff
+  const len = Math.hypot(dx, dy);
+
+  // A point to the right of the direction vector (rotate -90°)
+  const midLat = (first[0] + last[0]) / 2;
+  const midLng = (first[1] + last[1]) / 2;
+  const rightLng = midLng + (dy / len) * 0.01;
+  const rightLat = midLat - (dx / len) * 0.01;
+
+  // Is the right side east (higher lng) or west?
+  const rightIsEast = rightLng > midLng || (rightLng === midLng && rightLat > midLat);
+  const eastSide  = rightIsEast ? 'right' : 'left';
+  const westSide  = rightIsEast ? 'left'  : 'right';
+
+  const eastMask = buildSideMask(drawnPoints, eastSide);
+  const westMask = buildSideMask(drawnPoints, westSide);
+  if (!eastMask || !westMask) return null;
+
+  let eastFeature, westFeature;
   try {
-    pieces = turf.lineSplit(torontoFeature, line);
+    eastFeature = turf.intersect(torontoFeature, eastMask);
+    westFeature = turf.intersect(torontoFeature, westMask);
   } catch (e) {
-    console.warn('lineSplit failed:', e);
+    console.warn('intersect failed:', e);
     return null;
   }
 
-  if (!pieces || pieces.features.length < 2) return null;
+  if (!eastFeature || !westFeature) return null;
 
-  // Sort pieces by centroid longitude: highest lng = east
-  const sorted = pieces.features
-    .map(f => ({ f, lng: turf.centroid(f).geometry.coordinates[0] }))
-    .sort((a, b) => b.lng - a.lng);
-
-  const eastFeature = sorted[0].f;
-
-  // Union any remaining pieces as west
-  let westFeature = sorted[1].f;
-  for (let i = 2; i < sorted.length; i++) {
-    try { westFeature = turf.union(westFeature, sorted[i].f); } catch (e) { /* skip */ }
-  }
-
-  // Extract outer ring coordinates
+  // Extract outer ring coordinates for storage
   function outerRing(feature) {
     const geom = feature.geometry;
     if (geom.type === 'Polygon') return geom.coordinates[0];
@@ -330,7 +368,7 @@ function splitTorontoPolygon(drawnPoints) {
   const west = outerRing(westFeature);
   if (!east || !west) return null;
 
-  return { east, west };
+  return { east, west, eastFeature, westFeature };
 }
 
 // ── Drawing ────────────────────────────────────────────────────────────────
@@ -433,13 +471,12 @@ function finishDraw() {
   window._previewLayer = L.geoJSON({
     type: 'FeatureCollection',
     features: [
-      { type: 'Feature', geometry: { type: 'Polygon', coordinates: [result.east] } },
-      { type: 'Feature', geometry: { type: 'Polygon', coordinates: [result.west] } },
+      { ...result.eastFeature, properties: { side: 'east' } },
+      { ...result.westFeature, properties: { side: 'west' } },
     ],
   }, {
     style: feature => {
-      const centLng = turf.centroid(feature).geometry.coordinates[0];
-      const isEast  = centLng === turf.centroid({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [result.east] } }).geometry.coordinates[0];
+      const isEast = feature.properties.side === 'east';
       return {
         fillColor:   isEast ? '#e07b39' : '#4a90d9',
         fillOpacity: 0.22,
