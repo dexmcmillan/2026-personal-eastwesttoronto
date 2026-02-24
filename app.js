@@ -151,12 +151,12 @@ const HeatmapCanvasLayer = L.Layer.extend({
         const eastPct = e / total;
         ctx.fillStyle = lerpColour(COLOUR_WEST_RGB, COLOUR_EAST_RGB, eastPct);
         ctx.globalAlpha = 0.65;
-        ctx.fillRect(
-          Math.round(c * cellW),
-          Math.round(canvasRow * cellH),
-          Math.ceil(cellW),
-          Math.ceil(cellH)
-        );
+        // Use floor for position and ceil+1 for size to ensure cells are flush
+        const px = Math.floor(c * cellW);
+        const py = Math.floor(canvasRow * cellH);
+        const pw = Math.floor((c + 1) * cellW) - px + 1;
+        const ph = Math.floor((canvasRow + 1) * cellH) - py + 1;
+        ctx.fillRect(px, py, pw, ph);
       }
     }
     ctx.globalAlpha = 1;
