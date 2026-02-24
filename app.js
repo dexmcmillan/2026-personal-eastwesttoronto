@@ -38,7 +38,12 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png
   opacity: 1,
 }).addTo(map);
 
-// Pane for mask — sits above tiles but below labels
+// Pane for heatmap canvas — above tiles (200) but below mask (300)
+map.createPane('heatmapPane');
+map.getPane('heatmapPane').style.zIndex = 250;
+map.getPane('heatmapPane').style.pointerEvents = 'none';
+
+// Pane for mask — sits above heatmap but below labels
 map.createPane('maskPane');
 map.getPane('maskPane').style.zIndex = 300;
 map.getPane('maskPane').style.pointerEvents = 'none';
@@ -95,7 +100,7 @@ const HeatmapCanvasLayer = L.Layer.extend({
     this._canvas = L.DomUtil.create('canvas', 'heatmap-canvas');
     this._canvas.style.position = 'absolute';
     this._canvas.style.pointerEvents = 'none';
-    map.getPane('overlayPane').appendChild(this._canvas);
+    map.getPane('heatmapPane').appendChild(this._canvas);
     map.on('moveend zoomend', this._redraw, this);
     map.on('move zoom',       this._reposition, this);
   },
@@ -483,7 +488,7 @@ function finishDraw() {
   }
   splitResult = result;
 
-  // Show a preview: east in orange, west in blue, on top of mask
+  // Show a preview: east in orange, west in blue, below the mask
   if (window._previewLayer) { map.removeLayer(window._previewLayer); }
   window._previewLayer = L.geoJSON({
     type: 'FeatureCollection',
@@ -492,6 +497,7 @@ function finishDraw() {
       { ...result.westFeature, properties: { side: 'west' } },
     ],
   }, {
+    pane: 'heatmapPane',
     style: feature => {
       const isEast = feature.properties.side === 'east';
       return {
