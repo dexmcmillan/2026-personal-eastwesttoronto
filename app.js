@@ -255,7 +255,7 @@ function buildLabel(name) {
   const pctHtml = (agg && (agg.east + agg.west) > 0)
     ? `<span class="pct">${Math.round((agg.east / (agg.east + agg.west)) * 100)}% East</span>`
     : '';
-  return `${name}${pctHtml}`;
+  return `<span class="label-inner">${name}${pctHtml}</span>`;
 }
 
 // Returns pixel bounding box {w, h} of a feature at current zoom
