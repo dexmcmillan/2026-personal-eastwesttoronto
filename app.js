@@ -85,10 +85,17 @@ async function loadAggregates() {
     });
 
     aggregates = counts;
+    updateSubmissionCount(snapshot.size);
   } catch (e) {
     console.warn('Could not load aggregates from Firestore:', e);
     aggregates = {};
   }
+}
+
+function updateSubmissionCount(count) {
+  const noun = count === 1 ? 'other' : 'others';
+  document.getElementById('instructions').textContent =
+    `Draw a line across the map, then submit your answer to see how ${count} ${noun} have drawn the line.`;
 }
 
 // ── Refresh label visibility after zoom ───────────────────────────────────
