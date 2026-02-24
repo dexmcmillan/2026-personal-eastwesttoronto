@@ -1,3 +1,19 @@
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+import { getFirestore, collection, doc, setDoc, getDocs } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+
+// ── Firebase config ────────────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyAcK57xZZFKlGNyNAXBTxrUPkkUKFFus68",
+  authDomain: "eastwesttoronto.firebaseapp.com",
+  projectId: "eastwesttoronto",
+  storageBucket: "eastwesttoronto.firebasestorage.app",
+  messagingSenderId: "340678587011",
+  appId: "1:340678587011:web:e384b7f086cb56c4dfa1b6"
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
+
 // ── Constants ──────────────────────────────────────────────────────────────
 const TORONTO_CENTER = [43.7181, -79.3762];
 const TORONTO_ZOOM = 11;
@@ -20,12 +36,43 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
 let geojsonData = null;
 let neighbourhoodLayer = null;
 let labelLayers = [];
-let aggregates = {};   // { "Leslieville": { east: 12, west: 3 }, ... }
+let aggregates = {};
 
 let isDrawing = false;
-let drawnPoints = [];   // [[lat, lng], ...]
+let drawnPoints = [];
 let drawnPolyline = null;
 let lastClassified = null;
+
+// ── UUID (per-browser identity for deduplication) ──────────────────────────
+function getUserId() {
+  let id = localStorage.getItem('eastwest_uuid');
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem('eastwest_uuid', id);
+  }
+  return id;
+}
+const userId = getUserId();
+
+// ── Load aggregates from Firestore ─────────────────────────────────────────
+async function loadAggregates() {
+  const snapshot = await getDocs(collection(db, 'submissions'));
+  const counts = {};
+
+  snapshot.forEach(docSnap => {
+    const data = docSnap.data();
+    (data.east || []).forEach(name => {
+      if (!counts[name]) counts[name] = { east: 0, west: 0 };
+      counts[name].east++;
+    });
+    (data.west || []).forEach(name => {
+      if (!counts[name]) counts[name] = { east: 0, west: 0 };
+      counts[name].west++;
+    });
+  });
+
+  aggregates = counts;
+}
 
 // ── Load GeoJSON ───────────────────────────────────────────────────────────
 async function loadNeighbourhoods() {
@@ -49,7 +96,6 @@ function renderNeighbourhoods() {
     },
   }).addTo(map);
 
-  // Add labels at polygon centroids
   geojsonData.features.forEach(feature => {
     const name = feature.properties.AREA_NAME;
     const center = turf.centerOfMass(feature);
@@ -171,18 +217,17 @@ function classifyAndShow() {
   return classified;
 }
 
-// Determine which side of the drawn polyline a [lng, lat] point is on.
 function getSideOfLine(point, linePoints) {
   let minDist = Infinity;
   let sign = 0;
 
   for (let i = 0; i < linePoints.length - 1; i++) {
-    const ax = linePoints[i][1];     // lng
-    const ay = linePoints[i][0];     // lat
+    const ax = linePoints[i][1];
+    const ay = linePoints[i][0];
     const bx = linePoints[i + 1][1];
     const by = linePoints[i + 1][0];
-    const px = point[0];             // lng
-    const py = point[1];             // lat
+    const px = point[0];
+    const py = point[1];
 
     const dx = bx - ax;
     const dy = by - ay;
@@ -235,5 +280,42 @@ document.getElementById('btn-redraw').addEventListener('click', () => {
   renderNeighbourhoods();
 });
 
+document.getElementById('btn-submit').addEventListener('click', async () => {
+  if (!lastClassified) return;
+
+  const btn = document.getElementById('btn-submit');
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+
+  await setDoc(doc(db, 'submissions', userId), {
+    timestamp: new Date().toISOString(),
+    line: drawnPoints,
+    east: lastClassified.east,
+    west: lastClassified.west,
+  });
+
+  const toast = document.getElementById('toast');
+  toast.classList.remove('hidden');
+  setTimeout(() => toast.classList.add('hidden'), 3000);
+
+  await loadAggregates();
+
+  btn.disabled = false;
+  btn.textContent = 'Submit my answer';
+  document.getElementById('controls').classList.add('hidden');
+
+  if (drawnPolyline) {
+    map.removeLayer(drawnPolyline);
+    drawnPolyline = null;
+  }
+  drawnPoints = [];
+  lastClassified = null;
+  renderNeighbourhoods();
+});
+
 // ── Bootstrap ──────────────────────────────────────────────────────────────
-loadNeighbourhoods();
+async function init() {
+  await loadAggregates();
+  await loadNeighbourhoods();
+}
+init();
