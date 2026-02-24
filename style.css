@@ -5,125 +5,209 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #f5f5f5;
+  background: #f0f0f0;
 }
 
+/* ── Header ── */
 #header {
-  padding: 12px 20px;
-  background: #fff;
-  border-bottom: 1px solid #ddd;
+  padding: 14px 20px;
+  background: #1a1a2e;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+#header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
 #header h1 {
-  font-size: 1.3rem;
+  font-size: 1.15rem;
   font-weight: 700;
-  color: #1a1a1a;
+  color: #fff;
+  letter-spacing: -0.01em;
 }
 
 #instructions {
-  font-size: 0.9rem;
-  color: #555;
-  margin-top: 4px;
+  font-size: 0.8rem;
+  color: rgba(255,255,255,0.55);
+  font-weight: 400;
 }
 
+/* ── Legend ── */
+#legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: rgba(255,255,255,0.75);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.legend-swatch.west { background: #4a90d9; }
+.legend-swatch.east { background: #e07b39; }
+
+/* ── Map ── */
 #map {
   flex: 1;
   cursor: crosshair;
 }
 
+/* ── Controls bar ── */
 #controls {
   padding: 12px 20px;
-  background: #fff;
-  border-top: 1px solid #ddd;
+  background: #1a1a2e;
+  border-top: 1px solid rgba(255,255,255,0.08);
   display: flex;
-  gap: 12px;
+  align-items: center;
+  gap: 10px;
 }
 
 #controls.hidden {
   display: none;
 }
 
+#controls p {
+  font-size: 0.82rem;
+  color: rgba(255,255,255,0.5);
+  flex: 1;
+}
+
 button {
   padding: 8px 20px;
   border: none;
-  border-radius: 4px;
-  font-size: 0.95rem;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  font-family: inherit;
   cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+
+button:active {
+  transform: scale(0.97);
 }
 
 #btn-submit {
-  background: #1a73e8;
+  background: #4a90d9;
   color: #fff;
 }
 
 #btn-submit:hover {
-  background: #1557b0;
+  background: #3a7bc8;
+}
+
+#btn-submit:disabled {
+  background: #666;
+  cursor: default;
+  transform: none;
 }
 
 #btn-redraw {
-  background: #e8e8e8;
-  color: #333;
+  background: rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.8);
+  border: 1px solid rgba(255,255,255,0.15);
 }
 
 #btn-redraw:hover {
-  background: #d0d0d0;
+  background: rgba(255,255,255,0.18);
 }
 
+/* ── Toast ── */
 #toast {
   position: fixed;
   bottom: 80px;
   left: 50%;
   transform: translateX(-50%);
-  background: #323232;
+  background: #1a1a2e;
   color: #fff;
-  padding: 10px 24px;
-  border-radius: 4px;
-  font-size: 0.9rem;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 500;
   z-index: 9999;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  border: 1px solid rgba(255,255,255,0.1);
+  white-space: nowrap;
 }
 
 #toast.hidden {
   display: none;
 }
 
-/* Neighbourhood labels */
+/* ── Neighbourhood labels ── */
 .neighbourhood-label {
   background: transparent;
   border: none;
   box-shadow: none;
-  font-size: 10px;
+  font-family: 'Inter', -apple-system, sans-serif;
   font-weight: 600;
-  color: #333;
-  text-shadow: 0 0 3px #fff, 0 0 3px #fff;
+  color: #222;
+  text-shadow: 0 0 4px #fff, 0 0 4px #fff, 0 0 2px #fff;
   white-space: nowrap;
   pointer-events: none;
   transition: opacity 0.2s;
+  line-height: 1.2;
+  text-align: center;
 }
 
-/* Hide labels at low zoom — toggled by JS adding class to #map */
+.neighbourhood-label .pct {
+  font-weight: 400;
+  opacity: 0.75;
+  display: block;
+}
+
+/* Hide labels at low zoom — toggled by JS */
 #map.labels-hidden .neighbourhood-label {
   opacity: 0;
   pointer-events: none;
 }
 
-/* Loading overlay */
+/* ── Loading overlay ── */
 #loading {
   position: fixed;
   inset: 0;
-  background: #fff;
+  background: #1a1a2e;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 16px;
   z-index: 10000;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 0.95rem;
-  color: #555;
+  font-family: 'Inter', -apple-system, sans-serif;
+  font-size: 0.9rem;
+  color: rgba(255,255,255,0.5);
+}
+
+#loading h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.01em;
 }
 
 #loading.hidden {
@@ -133,8 +217,8 @@ button {
 #loading-spinner {
   width: 36px;
   height: 36px;
-  border: 3px solid #e0e0e0;
-  border-top-color: #1a73e8;
+  border: 3px solid rgba(255,255,255,0.15);
+  border-top-color: #4a90d9;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }

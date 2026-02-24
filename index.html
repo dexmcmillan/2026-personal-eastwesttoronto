@@ -4,19 +4,28 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>East vs. West Toronto</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div id="header">
-    <h1>East vs. West Toronto</h1>
-    <p id="instructions">Draw a line across the map to show where you think east Toronto ends and west Toronto begins.</p>
+    <div id="header-left">
+      <h1>East vs. West Toronto</h1>
+      <p id="instructions">Draw a line across the map to define where east Toronto ends and west Toronto begins.</p>
+    </div>
+    <div id="legend">
+      <span class="legend-item"><span class="legend-swatch west"></span>West</span>
+      <span class="legend-item"><span class="legend-swatch east"></span>East</span>
+    </div>
   </div>
 
   <div id="map"></div>
 
   <div id="loading">
     <div id="loading-spinner"></div>
+    <h2>East vs. West Toronto</h2>
     <p>Loading map…</p>
   </div>
 

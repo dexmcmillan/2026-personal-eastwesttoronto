@@ -86,6 +86,21 @@ async function loadAggregates() {
   }
 }
 
+// ── Refresh label sizes after zoom ────────────────────────────────────────
+function refreshLabels() {
+  geojsonData.features.forEach((feature, i) => {
+    const marker = labelLayers[i];
+    if (!marker) return;
+    const name = feature.properties.AREA_NAME;
+    const fontSize = labelFontSize(feature);
+    marker.setIcon(L.divIcon({
+      className: 'neighbourhood-label',
+      html: buildLabel(name, fontSize),
+      iconSize: null,
+    }));
+  });
+}
+
 // ── Zoom-based label visibility ────────────────────────────────────────────
 function updateLabelVisibility() {
   const mapEl = document.getElementById('map');
@@ -96,7 +111,10 @@ function updateLabelVisibility() {
   }
 }
 
-map.on('zoomend', updateLabelVisibility);
+map.on('zoomend', () => {
+  updateLabelVisibility();
+  if (geojsonData) refreshLabels();
+});
 
 // ── Load GeoJSON ───────────────────────────────────────────────────────────
 async function loadNeighbourhoods() {
@@ -174,7 +192,8 @@ function renderNeighbourhoods() {
     const name = feature.properties.AREA_NAME;
     const center = turf.centerOfMass(feature);
     const [lng, lat] = center.geometry.coordinates;
-    const label = buildLabel(name);
+    const fontSize = labelFontSize(feature);
+    const label = buildLabel(name, fontSize);
     const marker = L.marker([lat, lng], {
       icon: L.divIcon({
         className: 'neighbourhood-label',
@@ -199,14 +218,29 @@ function styleForNeighbourhood(name) {
   return { fillColor: colour, fillOpacity: opacity, color: '#aaa', weight: 0.5 };
 }
 
-function buildLabel(name) {
+function buildLabel(name, fontSize) {
   const agg = aggregates[name];
-  if (!agg || (agg.east === 0 && agg.west === 0)) {
-    return name;
-  }
-  const total = agg.east + agg.west;
-  const eastPct = Math.round((agg.east / total) * 100);
-  return `${name}<br><span style="font-weight:400">${eastPct}% East</span>`;
+  const pctHtml = (agg && (agg.east + agg.west) > 0)
+    ? `<span class="pct">${Math.round((agg.east / (agg.east + agg.west)) * 100)}% East</span>`
+    : '';
+  return `<span style="font-size:${fontSize}px">${name}${pctHtml}</span>`;
+}
+
+// Compute a font size for a neighbourhood based on its pixel bounding-box width
+function labelFontSize(feature) {
+  const geom = feature.geometry;
+  let coords = [];
+  if (geom.type === 'Polygon') coords = geom.coordinates[0];
+  else if (geom.type === 'MultiPolygon') coords = geom.coordinates[0][0];
+  if (!coords.length) return 9;
+
+  const points = coords.map(([lng, lat]) => map.latLngToContainerPoint([lat, lng]));
+  const xs = points.map(p => p.x);
+  const ys = points.map(p => p.y);
+  const w = Math.max(...xs) - Math.min(...xs);
+  const h = Math.max(...ys) - Math.min(...ys);
+  const size = Math.min(w, h);
+  return Math.min(13, Math.max(7, Math.round(size * 0.12)));
 }
 
 // ── Drawing ────────────────────────────────────────────────────────────────
