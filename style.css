@@ -184,6 +184,50 @@ button:active {
   display: none;
 }
 
+/* ── Heatmap percentage labels ── */
+.heatmap-label {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  pointer-events: none;
+  overflow: visible !important;
+}
+
+.heatmap-label-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-family: 'Inter', -apple-system, sans-serif;
+  font-weight: 700;
+  font-size: 28px;
+  line-height: 1;
+  border-radius: 8px;
+  padding: 8px 14px 6px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.heatmap-label-inner.east-label {
+  color: #c45e1a;
+  background: rgba(255,255,255,0.72);
+}
+
+.heatmap-label-inner.west-label {
+  color: #2e6aaa;
+  background: rgba(255,255,255,0.72);
+}
+
+.heatmap-label-sub {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.8;
+  margin-top: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 /* ── Loading overlay ── */
 #loading {
   position: fixed;

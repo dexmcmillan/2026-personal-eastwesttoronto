@@ -222,6 +222,69 @@ async function loadBoundary() {
   document.getElementById('loading').classList.add('hidden');
 }
 
+// ── Heatmap labels ─────────────────────────────────────────────────────────
+let heatmapLabelMarkers = [];
+
+function updateHeatmapLabels(eastCounts, westCounts) {
+  // Remove old labels
+  heatmapLabelMarkers.forEach(m => map.removeLayer(m));
+  heatmapLabelMarkers = [];
+
+  // Find centroid of east-majority cells and west-majority cells,
+  // and compute overall east% and west% across all cells with data.
+  let totalEast = 0, totalWest = 0;
+  let eastSumLng = 0, eastSumLat = 0, eastCellCount = 0;
+  let westSumLng = 0, westSumLat = 0, westCellCount = 0;
+
+  const total = GRID_COLS * GRID_ROWS;
+  for (let i = 0; i < total; i++) {
+    if (!inTorontoMask[i]) continue;
+    const e = eastCounts[i], w = westCounts[i];
+    if (e + w === 0) continue;
+    totalEast += e;
+    totalWest += w;
+    const lng = cellCentroids[i * 2];
+    const lat = cellCentroids[i * 2 + 1];
+    if (e >= w) { eastSumLng += lng; eastSumLat += lat; eastCellCount++; }
+    else        { westSumLng += lng; westSumLat += lat; westCellCount++; }
+  }
+
+  const grandTotal = totalEast + totalWest;
+  if (grandTotal === 0) return;
+
+  const overallEastPct  = Math.round((totalEast / grandTotal) * 100);
+  const overallWestPct  = 100 - overallEastPct;
+
+  function placeLabel(lat, lng, html) {
+    const marker = L.marker([lat, lng], {
+      icon: L.divIcon({
+        className: 'heatmap-label',
+        html,
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
+      }),
+      interactive: false,
+      pane: 'labelsPane',
+    }).addTo(map);
+    heatmapLabelMarkers.push(marker);
+  }
+
+  if (eastCellCount > 0) {
+    placeLabel(
+      eastSumLat / eastCellCount,
+      eastSumLng / eastCellCount,
+      `<span class="heatmap-label-inner east-label">${overallEastPct}%<span class="heatmap-label-sub">say east</span></span>`
+    );
+  }
+  if (westCellCount > 0) {
+    placeLabel(
+      westSumLat / westCellCount,
+      westSumLng / westCellCount,
+      `<span class="heatmap-label-inner west-label">${overallWestPct}%<span class="heatmap-label-sub">say west</span></span>`
+    );
+  }
+}
+
 // ── Worker setup ───────────────────────────────────────────────────────────
 function initWorker() {
   heatmapWorker = new Worker('heatmap-worker.js');
@@ -230,10 +293,10 @@ function initWorker() {
       // Restore transferred buffers so grid is still usable
       cellCentroids = new Float64Array(data.centroids);
       inTorontoMask = new Uint8Array(data.inMask);
-      heatmapLayer.update(
-        new Int32Array(data.eastCounts),
-        new Int32Array(data.westCounts)
-      );
+      const eastCounts = new Int32Array(data.eastCounts);
+      const westCounts = new Int32Array(data.westCounts);
+      heatmapLayer.update(eastCounts, westCounts);
+      updateHeatmapLabels(eastCounts, westCounts);
     }
   };
 }
