@@ -26,7 +26,13 @@ const OPACITY_MAX = 0.1;
 const LABEL_ZOOM_THRESHOLD = 12;  // labels appear at this zoom and above
 
 // ── Map setup ──────────────────────────────────────────────────────────────
-const map = L.map('map', { zoomControl: true, minZoom: 10 }).setView(TORONTO_CENTER, TORONTO_ZOOM);
+const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+const map = L.map('map', {
+  zoomControl: true,
+  minZoom: 10,
+  dragging: !isTouchDevice,
+  tap: false,
+}).setView(TORONTO_CENTER, TORONTO_ZOOM);
 
 L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
   attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
@@ -439,7 +445,7 @@ function highlightClassification(classified) {
 }
 
 function showControls() {
-  document.getElementById('controls').classList.remove('hidden');
+  document.getElementById('controls-modal').classList.remove('hidden');
 }
 
 // ── Controls ───────────────────────────────────────────────────────────────
@@ -450,7 +456,7 @@ document.getElementById('btn-redraw').addEventListener('click', () => {
   }
   drawnPoints = [];
   lastClassified = null;
-  document.getElementById('controls').classList.add('hidden');
+  document.getElementById('controls-modal').classList.add('hidden');
   renderNeighbourhoods();
 });
 
@@ -481,7 +487,7 @@ document.getElementById('btn-submit').addEventListener('click', async () => {
 
   btn.disabled = false;
   btn.textContent = 'Submit my answer';
-  document.getElementById('controls').classList.add('hidden');
+  document.getElementById('controls-modal').classList.add('hidden');
 
   if (drawnPolyline) {
     map.removeLayer(drawnPolyline);
@@ -503,7 +509,6 @@ map.on('touchstart', e => {
       map.removeLayer(drawnPolyline);
       drawnPolyline = null;
     }
-    map.dragging.disable();
   }
 });
 
@@ -520,7 +525,6 @@ map.on('touchmove', e => {
 map.on('touchend', () => {
   if (!isDrawing) return;
   isDrawing = false;
-  map.dragging.enable();
   if (drawnPoints.length > 1) {
     lastClassified = classifyAndShow();
   }

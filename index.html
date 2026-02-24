@@ -11,10 +11,9 @@
 </head>
 <body>
   <div id="header">
-    <div id="header-left">
-      <h1>East vs. West Toronto</h1>
-      <p id="instructions">Draw a line across the map to define where east Toronto ends and west Toronto begins.</p>
-    </div>
+    <h1>East vs. West Toronto</h1>
+    <p id="question">Where do you draw the line between east and west Toronto?</p>
+    <p id="instructions">Click and drag across the map to draw your dividing line, then submit your answer.</p>
     <div id="legend">
       <span class="legend-item"><span class="legend-swatch west"></span>West</span>
       <span class="legend-item"><span class="legend-swatch east"></span>East</span>
@@ -29,9 +28,14 @@
     <p>Loading map…</p>
   </div>
 
-  <div id="controls" class="hidden">
-    <button id="btn-submit">Submit my answer</button>
-    <button id="btn-redraw">Redraw</button>
+  <div id="controls-modal" class="hidden">
+    <div id="controls-card">
+      <p id="controls-prompt">Happy with your line?</p>
+      <div id="controls-buttons">
+        <button id="btn-submit">Submit my answer</button>
+        <button id="btn-redraw">Redraw</button>
+      </div>
+    </div>
   </div>
 
   <div id="toast" class="hidden">Thanks! Your answer has been recorded.</div>
