@@ -659,6 +659,7 @@ function clearDraw() {
   drawnPoints = [];
   splitResult = null;
   _pendingStartPoint = null;
+  clearHeatmap();
 }
 
 document.getElementById('btn-redraw').addEventListener('click', () => {
