@@ -68,6 +68,7 @@ let inTorontoMask = null;    // Uint8Array — 1 if cell centroid is inside Toro
 let isDrawing = false;
 let drawnPoints = [];
 let drawnPolyline = null;
+let _pendingStartPoint = null;
 let splitResult = null;      // { east: coords[][], west: coords[][] } after drawing
 let hasSubmitted = localStorage.getItem('eastwest_submitted') === 'true';
 
@@ -524,12 +525,9 @@ function stopEdgePan() {
 map.on('mousedown', e => {
   isDrawing = true;
   if (heatmapLayer._eastCounts) clearHeatmap();
-  // Connect from last point if one exists, otherwise start fresh
-  if (drawnPoints.length === 0) {
-    drawnPoints = [[e.latlng.lat, e.latlng.lng]];
-  } else {
-    drawnPoints.push([e.latlng.lat, e.latlng.lng]);
-  }
+  // Don't push the mousedown point yet — wait for first mousemove so we
+  // don't draw a teleport segment if resuming an existing line.
+  _pendingStartPoint = [e.latlng.lat, e.latlng.lng];
   map.dragging.disable();
   startEdgePan();
 });
@@ -537,6 +535,13 @@ map.on('mousedown', e => {
 map.on('mousemove', e => {
   lastMouseContainerPoint = e.containerPoint;
   if (!isDrawing) return;
+  // On first move of this stroke, commit the start point (connecting to prior
+  // line if one exists, or starting fresh).
+  if (_pendingStartPoint) {
+    if (drawnPoints.length === 0) drawnPoints = [_pendingStartPoint];
+    else drawnPoints.push(_pendingStartPoint);
+    _pendingStartPoint = null;
+  }
   drawnPoints.push([e.latlng.lat, e.latlng.lng]);
   if (drawnPolyline) map.removeLayer(drawnPolyline);
   drawnPolyline = L.polyline(drawnPoints, { color: '#e63946', weight: 3 }).addTo(map);
@@ -562,12 +567,8 @@ mapEl.addEventListener('touchstart', e => {
   const touch = e.touches[0];
   const rect  = mapEl.getBoundingClientRect();
   const latlng = map.containerPointToLatLng([touch.clientX - rect.left, touch.clientY - rect.top]);
-  // Connect from last point if one exists, otherwise start fresh
-  if (drawnPoints.length === 0) {
-    drawnPoints = [[latlng.lat, latlng.lng]];
-  } else {
-    drawnPoints.push([latlng.lat, latlng.lng]);
-  }
+  // Don't push yet — wait for first touchmove to avoid teleport segments.
+  _pendingStartPoint = [latlng.lat, latlng.lng];
 }, { passive: false, capture: true });
 
 mapEl.addEventListener('touchmove', e => {
@@ -577,6 +578,12 @@ mapEl.addEventListener('touchmove', e => {
   const touch  = e.touches[0];
   const rect   = mapEl.getBoundingClientRect();
   const latlng = map.containerPointToLatLng([touch.clientX - rect.left, touch.clientY - rect.top]);
+  // On first move, commit the touchstart point.
+  if (_pendingStartPoint) {
+    if (drawnPoints.length === 0) drawnPoints = [_pendingStartPoint];
+    else drawnPoints.push(_pendingStartPoint);
+    _pendingStartPoint = null;
+  }
   drawnPoints.push([latlng.lat, latlng.lng]);
   if (drawnPolyline) map.removeLayer(drawnPolyline);
   drawnPolyline = L.polyline(drawnPoints, { color: '#e63946', weight: 3 }).addTo(map);
@@ -651,6 +658,7 @@ function clearDraw() {
   if (window._previewLayer) { map.removeLayer(window._previewLayer); window._previewLayer = null; }
   drawnPoints = [];
   splitResult = null;
+  _pendingStartPoint = null;
 }
 
 document.getElementById('btn-redraw').addEventListener('click', () => {
