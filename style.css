@@ -156,7 +156,7 @@ button:active {
   display: none;
 }
 
-/* ── Dynamic results legend ── */
+/* ── Gradient colour legend ── */
 #legend-results {
   width: 100%;
   max-width: 340px;
@@ -167,38 +167,21 @@ button:active {
   display: none;
 }
 
-#legend-bar-wrap {
-  display: flex;
+#legend-gradient-bar {
   height: 10px;
   border-radius: 5px;
-  overflow: hidden;
+  background: linear-gradient(to right, rgb(74,144,217), rgb(149,134,137), rgb(224,123,57));
   width: 100%;
 }
 
-#legend-bar-west {
-  background: #4a90d9;
-  height: 100%;
-  transition: width 0.4s ease;
-}
-
-#legend-bar-east {
-  background: #e07b39;
-  height: 100%;
-  transition: width 0.4s ease;
-  flex: 1;
-}
-
-#legend-bar-labels {
+#legend-gradient-labels {
   display: flex;
   justify-content: space-between;
   margin-top: 4px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: rgba(255,255,255,0.8);
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: rgba(255,255,255,0.6);
 }
-
-#legend-pct-west { color: #7ab8f5; }
-#legend-pct-east { color: #f0a06a; }
 
 /* ── Heatmap percentage labels ── */
 .heatmap-label {
@@ -233,12 +216,6 @@ button:active {
 .heatmap-label-inner.west-label {
   color: #2e6aaa;
   background: rgba(255,255,255,0.72);
-}
-
-.heatmap-label-inner.contested-label {
-  color: #555;
-  background: rgba(255,255,255,0.72);
-  font-size: 13px;
 }
 
 .heatmap-label-sub {

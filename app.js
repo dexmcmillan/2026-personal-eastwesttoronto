@@ -262,13 +262,8 @@ function updateHeatmapLabels(eastCounts, westCounts) {
   const grandTotal = totalEast + totalWest;
   if (grandTotal === 0) return;
 
-  // Update the header legend bar
-  const overallEastPct = Math.round((totalEast / grandTotal) * 100);
-  const overallWestPct = 100 - overallEastPct;
+  // Show the gradient legend bar
   document.getElementById('legend-results').classList.remove('hidden');
-  document.getElementById('legend-bar-west').style.width = overallWestPct + '%';
-  document.getElementById('legend-pct-west').textContent = overallWestPct + '% West';
-  document.getElementById('legend-pct-east').textContent = overallEastPct + '% East';
 
   function placeLabel(lat, lng, html) {
     const marker = L.marker([lat, lng], {
@@ -284,22 +279,18 @@ function updateHeatmapLabels(eastCounts, westCounts) {
     heatmapLabelMarkers.push(marker);
   }
 
-  // For each band, find connected components (4-connected grid neighbours)
-  // and place one label per component.
+  // Place labels only on 100% agreement bands (unanimous east or west).
+  // Contested areas are explained by the gradient legend in the header.
   for (const [key, b] of bands.entries()) {
     const eastPct = Math.round((b.e / b.total) * 100);
     const westPct = 100 - eastPct;
+    if (eastPct !== 100 && westPct !== 100) continue;
 
-    let html;
-    if (eastPct === 100) {
-      html = `<span class="heatmap-label-inner east-label">100%<span class="heatmap-label-sub">say east</span></span>`;
-    } else if (westPct === 100) {
-      html = `<span class="heatmap-label-inner west-label">100%<span class="heatmap-label-sub">say west</span></span>`;
-    } else {
-      html = `<span class="heatmap-label-inner contested-label">${westPct}%W / ${eastPct}%E<span class="heatmap-label-sub">contested</span></span>`;
-    }
+    const html = eastPct === 100
+      ? `<span class="heatmap-label-inner east-label">100%<span class="heatmap-label-sub">say east</span></span>`
+      : `<span class="heatmap-label-inner west-label">100%<span class="heatmap-label-sub">say west</span></span>`;
 
-    // Build a set of cell indices in this band
+    // BFS: one label per connected component in this band
     const inBand = new Uint8Array(GRID_COLS * GRID_ROWS);
     for (let i = 0; i < GRID_COLS * GRID_ROWS; i++) {
       if (!inTorontoMask[i]) continue;
@@ -307,23 +298,18 @@ function updateHeatmapLabels(eastCounts, westCounts) {
       if (e + w === 0) continue;
       if (`${e}/${e + w}` === key) inBand[i] = 1;
     }
-
-    // BFS to find connected components
     const visited = new Uint8Array(GRID_COLS * GRID_ROWS);
     for (let start = 0; start < GRID_COLS * GRID_ROWS; start++) {
       if (!inBand[start] || visited[start]) continue;
-      // BFS from this cell
       const queue = [start];
       visited[start] = 1;
-      let sumLng = 0, sumLat = 0, count = 0;
-      let qi = 0;
+      let sumLng = 0, sumLat = 0, count = 0, qi = 0;
       while (qi < queue.length) {
         const idx = queue[qi++];
         sumLng += cellCentroids[idx * 2];
         sumLat += cellCentroids[idx * 2 + 1];
         count++;
-        const r = Math.floor(idx / GRID_COLS);
-        const c = idx % GRID_COLS;
+        const r = Math.floor(idx / GRID_COLS), c = idx % GRID_COLS;
         for (const [nr, nc] of [[r-1,c],[r+1,c],[r,c-1],[r,c+1]]) {
           if (nr < 0 || nr >= GRID_ROWS || nc < 0 || nc >= GRID_COLS) continue;
           const ni = nr * GRID_COLS + nc;
