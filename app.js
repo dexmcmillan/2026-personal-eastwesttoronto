@@ -32,6 +32,11 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
   maxZoom: 19,
 }).addTo(map);
 
+// Pane for mask — sits above tiles (200) but below neighbourhood polygons (400)
+map.createPane('maskPane');
+map.getPane('maskPane').style.zIndex = 300;
+map.getPane('maskPane').style.pointerEvents = 'none';
+
 // ── State ──────────────────────────────────────────────────────────────────
 let geojsonData = null;
 let neighbourhoodLayer = null;
@@ -56,29 +61,76 @@ const userId = getUserId();
 
 // ── Load aggregates from Firestore ─────────────────────────────────────────
 async function loadAggregates() {
-  const snapshot = await getDocs(collection(db, 'submissions'));
-  const counts = {};
+  try {
+    const snapshot = await getDocs(collection(db, 'submissions'));
+    const counts = {};
 
-  snapshot.forEach(docSnap => {
-    const data = docSnap.data();
-    (data.east || []).forEach(name => {
-      if (!counts[name]) counts[name] = { east: 0, west: 0 };
-      counts[name].east++;
+    snapshot.forEach(docSnap => {
+      const data = docSnap.data();
+      (data.east || []).forEach(name => {
+        if (!counts[name]) counts[name] = { east: 0, west: 0 };
+        counts[name].east++;
+      });
+      (data.west || []).forEach(name => {
+        if (!counts[name]) counts[name] = { east: 0, west: 0 };
+        counts[name].west++;
+      });
     });
-    (data.west || []).forEach(name => {
-      if (!counts[name]) counts[name] = { east: 0, west: 0 };
-      counts[name].west++;
-    });
-  });
 
-  aggregates = counts;
+    aggregates = counts;
+  } catch (e) {
+    console.warn('Could not load aggregates from Firestore:', e);
+    aggregates = {};
+  }
 }
 
 // ── Load GeoJSON ───────────────────────────────────────────────────────────
 async function loadNeighbourhoods() {
   const response = await fetch('data/toronto-neighbourhoods.geojson');
   geojsonData = await response.json();
+  renderMask();
   renderNeighbourhoods();
+}
+
+// ── Mask: white overlay outside Toronto neighbourhood bounds ───────────────
+function renderMask() {
+  // Build a union of all neighbourhood polygons using Turf
+  let union = null;
+  for (const feature of geojsonData.features) {
+    try {
+      const geom = feature.geometry;
+      let poly;
+      if (geom.type === 'Polygon') {
+        poly = turf.polygon(geom.coordinates);
+      } else if (geom.type === 'MultiPolygon') {
+        poly = turf.multiPolygon(geom.coordinates);
+      } else {
+        continue;
+      }
+      union = union ? turf.union(union, poly) : poly;
+    } catch (e) {
+      // skip features that fail union
+    }
+  }
+  if (!union) return;
+
+  // Create an inverted mask: world bbox with Toronto union as a hole
+  const world = turf.polygon([[
+    [-180, -90], [180, -90], [180, 90], [-180, 90], [-180, -90]
+  ]]);
+  const mask = turf.difference(world, union);
+  if (!mask) return;
+
+  L.geoJSON(mask, {
+    style: {
+      fillColor: '#ffffff',
+      fillOpacity: 1,
+      color: 'none',
+      weight: 0,
+    },
+    pane: 'maskPane',
+    interactive: false,
+  }).addTo(map);
 }
 
 // ── Render neighbourhood polygons ──────────────────────────────────────────
