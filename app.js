@@ -189,7 +189,7 @@ function renderMask() {
   L.geoJSON(mask, {
     style: {
       fillColor: '#f0f0f0',
-      fillOpacity: 0.72,
+      fillOpacity: 0.45,
       color: '#888',
       weight: 1.5,
     },
