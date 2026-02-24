@@ -21,8 +21,8 @@ const TORONTO_ZOOM = 11;
 const COLOUR_NEUTRAL = '#aaaaaa';
 const COLOUR_EAST = '#e07b39';   // orange
 const COLOUR_WEST = '#4a90d9';   // blue
-const OPACITY_MIN = 0.03;
-const OPACITY_MAX = 0.18;
+const OPACITY_MIN = 0.02;
+const OPACITY_MAX = 0.1;
 const LABEL_ZOOM_THRESHOLD = 12;  // labels appear at this zoom and above
 
 // ── Map setup ──────────────────────────────────────────────────────────────
@@ -31,6 +31,7 @@ const map = L.map('map', { zoomControl: true, minZoom: 10 }).setView(TORONTO_CEN
 L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
   attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
   maxZoom: 19,
+  opacity: 1,
 }).addTo(map);
 
 // Pane for mask — sits above tiles (200) but below neighbourhood polygons (400)
@@ -144,10 +145,10 @@ function renderMask() {
 
   L.geoJSON(mask, {
     style: {
-      fillColor: '#ffffff',
+      fillColor: '#f8f8f8',
       fillOpacity: 1,
-      color: 'none',
-      weight: 0,
+      color: '#ccc',
+      weight: 0.5,
     },
     pane: 'maskPane',
     interactive: false,
@@ -188,14 +189,14 @@ function renderNeighbourhoods() {
 function styleForNeighbourhood(name) {
   const agg = aggregates[name];
   if (!agg || (agg.east === 0 && agg.west === 0)) {
-    return { fillColor: COLOUR_NEUTRAL, fillOpacity: 0.04, color: '#888', weight: 0.5 };
+    return { fillColor: COLOUR_NEUTRAL, fillOpacity: 0.02, color: '#aaa', weight: 0.5 };
   }
   const total = agg.east + agg.west;
   const eastPct = agg.east / total;
   const confidence = Math.abs(eastPct - 0.5) * 2;
   const opacity = OPACITY_MIN + confidence * (OPACITY_MAX - OPACITY_MIN);
   const colour = eastPct >= 0.5 ? COLOUR_EAST : COLOUR_WEST;
-  return { fillColor: colour, fillOpacity: opacity, color: '#666', weight: 1 };
+  return { fillColor: colour, fillOpacity: opacity, color: '#aaa', weight: 0.5 };
 }
 
 function buildLabel(name) {
@@ -357,11 +358,11 @@ function highlightClassification(classified) {
     style: feature => {
       const name = feature.properties.AREA_NAME;
       if (classified.east.includes(name)) {
-        return { fillColor: COLOUR_EAST, fillOpacity: 0.18, color: '#888', weight: 0.5 };
+        return { fillColor: COLOUR_EAST, fillOpacity: 0.12, color: '#aaa', weight: 0.5 };
       } else if (classified.west.includes(name)) {
-        return { fillColor: COLOUR_WEST, fillOpacity: 0.18, color: '#888', weight: 0.5 };
+        return { fillColor: COLOUR_WEST, fillOpacity: 0.12, color: '#aaa', weight: 0.5 };
       }
-      return { fillColor: COLOUR_NEUTRAL, fillOpacity: 0.04, color: '#888', weight: 0.5 };
+      return { fillColor: COLOUR_NEUTRAL, fillOpacity: 0.02, color: '#aaa', weight: 0.5 };
     },
   }).addTo(map);
 }
