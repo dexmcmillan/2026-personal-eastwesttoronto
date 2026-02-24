@@ -523,9 +523,13 @@ function stopEdgePan() {
 
 map.on('mousedown', e => {
   isDrawing = true;
-  drawnPoints = [[e.latlng.lat, e.latlng.lng]];
-  if (drawnPolyline) { map.removeLayer(drawnPolyline); drawnPolyline = null; }
   if (heatmapLayer._eastCounts) clearHeatmap();
+  // Connect from last point if one exists, otherwise start fresh
+  if (drawnPoints.length === 0) {
+    drawnPoints = [[e.latlng.lat, e.latlng.lng]];
+  } else {
+    drawnPoints.push([e.latlng.lat, e.latlng.lng]);
+  }
   map.dragging.disable();
   startEdgePan();
 });
@@ -554,12 +558,16 @@ mapEl.addEventListener('touchstart', e => {
   e.preventDefault();
   e.stopPropagation();
   isDrawing = true;
+  if (heatmapLayer._eastCounts) clearHeatmap();
   const touch = e.touches[0];
   const rect  = mapEl.getBoundingClientRect();
   const latlng = map.containerPointToLatLng([touch.clientX - rect.left, touch.clientY - rect.top]);
-  drawnPoints = [[latlng.lat, latlng.lng]];
-  if (drawnPolyline) { map.removeLayer(drawnPolyline); drawnPolyline = null; }
-  if (heatmapLayer._eastCounts) clearHeatmap();
+  // Connect from last point if one exists, otherwise start fresh
+  if (drawnPoints.length === 0) {
+    drawnPoints = [[latlng.lat, latlng.lng]];
+  } else {
+    drawnPoints.push([latlng.lat, latlng.lng]);
+  }
 }, { passive: false, capture: true });
 
 mapEl.addEventListener('touchmove', e => {
