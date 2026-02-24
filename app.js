@@ -21,11 +21,11 @@ const TORONTO_ZOOM = 11;
 const COLOUR_NEUTRAL = '#aaaaaa';
 const COLOUR_EAST = '#e07b39';   // orange
 const COLOUR_WEST = '#4a90d9';   // blue
-const OPACITY_MIN = 0.15;
-const OPACITY_MAX = 0.75;
+const OPACITY_MIN = 0.08;
+const OPACITY_MAX = 0.45;
 
 // ── Map setup ──────────────────────────────────────────────────────────────
-const map = L.map('map', { zoomControl: true }).setView(TORONTO_CENTER, TORONTO_ZOOM);
+const map = L.map('map', { zoomControl: true, minZoom: 10 }).setView(TORONTO_CENTER, TORONTO_ZOOM);
 
 L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
   attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
@@ -167,7 +167,7 @@ function renderNeighbourhoods() {
 function styleForNeighbourhood(name) {
   const agg = aggregates[name];
   if (!agg || (agg.east === 0 && agg.west === 0)) {
-    return { fillColor: COLOUR_NEUTRAL, fillOpacity: 0.3, color: '#666', weight: 1 };
+    return { fillColor: COLOUR_NEUTRAL, fillOpacity: 0.15, color: '#666', weight: 1 };
   }
   const total = agg.east + agg.west;
   const eastPct = agg.east / total;
@@ -188,6 +188,32 @@ function buildLabel(name) {
 }
 
 // ── Drawing ────────────────────────────────────────────────────────────────
+const EDGE_PAN_ZONE = 60;   // px from edge to trigger pan
+const EDGE_PAN_SPEED = 8;   // px per frame
+let edgePanFrame = null;
+let lastMouseContainerPoint = null;
+
+function startEdgePan() {
+  if (edgePanFrame) return;
+  function step() {
+    if (!isDrawing || !lastMouseContainerPoint) { edgePanFrame = null; return; }
+    const { x, y } = lastMouseContainerPoint;
+    const { x: w, y: h } = map.getSize();
+    let dx = 0, dy = 0;
+    if (x < EDGE_PAN_ZONE) dx = -EDGE_PAN_SPEED * (1 - x / EDGE_PAN_ZONE);
+    if (x > w - EDGE_PAN_ZONE) dx = EDGE_PAN_SPEED * (1 - (w - x) / EDGE_PAN_ZONE);
+    if (y < EDGE_PAN_ZONE) dy = -EDGE_PAN_SPEED * (1 - y / EDGE_PAN_ZONE);
+    if (y > h - EDGE_PAN_ZONE) dy = EDGE_PAN_SPEED * (1 - (h - y) / EDGE_PAN_ZONE);
+    if (dx !== 0 || dy !== 0) map.panBy([dx, dy], { animate: false });
+    edgePanFrame = requestAnimationFrame(step);
+  }
+  edgePanFrame = requestAnimationFrame(step);
+}
+
+function stopEdgePan() {
+  if (edgePanFrame) { cancelAnimationFrame(edgePanFrame); edgePanFrame = null; }
+}
+
 map.on('mousedown', e => {
   isDrawing = true;
   drawnPoints = [[e.latlng.lat, e.latlng.lng]];
@@ -196,9 +222,11 @@ map.on('mousedown', e => {
     drawnPolyline = null;
   }
   map.dragging.disable();
+  startEdgePan();
 });
 
 map.on('mousemove', e => {
+  lastMouseContainerPoint = e.containerPoint;
   if (!isDrawing) return;
   drawnPoints.push([e.latlng.lat, e.latlng.lng]);
   if (drawnPolyline) map.removeLayer(drawnPolyline);
@@ -208,6 +236,7 @@ map.on('mousemove', e => {
 map.on('mouseup', () => {
   if (!isDrawing) return;
   isDrawing = false;
+  stopEdgePan();
   map.dragging.enable();
   if (drawnPoints.length > 1) {
     lastClassified = classifyAndShow();
@@ -307,11 +336,11 @@ function highlightClassification(classified) {
     style: feature => {
       const name = feature.properties.AREA_NAME;
       if (classified.east.includes(name)) {
-        return { fillColor: COLOUR_EAST, fillOpacity: 0.5, color: '#666', weight: 1 };
+        return { fillColor: COLOUR_EAST, fillOpacity: 0.35, color: '#666', weight: 1 };
       } else if (classified.west.includes(name)) {
-        return { fillColor: COLOUR_WEST, fillOpacity: 0.5, color: '#666', weight: 1 };
+        return { fillColor: COLOUR_WEST, fillOpacity: 0.35, color: '#666', weight: 1 };
       }
-      return { fillColor: COLOUR_NEUTRAL, fillOpacity: 0.3, color: '#666', weight: 1 };
+      return { fillColor: COLOUR_NEUTRAL, fillOpacity: 0.15, color: '#666', weight: 1 };
     },
   }).addTo(map);
 }
