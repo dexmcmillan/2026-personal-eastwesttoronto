@@ -26,11 +26,9 @@ const OPACITY_MAX = 0.1;
 const LABEL_ZOOM_THRESHOLD = 12;  // labels appear at this zoom and above
 
 // ── Map setup ──────────────────────────────────────────────────────────────
-const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 const map = L.map('map', {
   zoomControl: true,
   minZoom: 10,
-  dragging: !isTouchDevice,
   tap: false,
 }).setView(TORONTO_CENTER, TORONTO_ZOOM);
 
@@ -188,8 +186,8 @@ function renderMask() {
 
   L.geoJSON(mask, {
     style: {
-      fillColor: '#f8f8f8',
-      fillOpacity: 1,
+      fillColor: '#f0f0f0',
+      fillOpacity: 0.72,
       color: '#888',
       weight: 1.5,
     },
@@ -499,36 +497,45 @@ document.getElementById('btn-submit').addEventListener('click', async () => {
 });
 
 // ── Touch support ──────────────────────────────────────────────────────────
-map.on('touchstart', e => {
-  if (e.touches && e.touches.length === 1) {
-    isDrawing = true;
-    const touch = e.touches[0];
-    const latlng = map.containerPointToLatLng([touch.clientX, touch.clientY]);
-    drawnPoints = [[latlng.lat, latlng.lng]];
-    if (drawnPolyline) {
-      map.removeLayer(drawnPolyline);
-      drawnPolyline = null;
-    }
-  }
-});
+// ── Touch drawing (DOM-level to intercept before Leaflet's drag handler) ──
+const mapEl = document.getElementById('map');
 
-map.on('touchmove', e => {
-  if (!isDrawing || !e.touches || e.touches.length !== 1) return;
-  e.originalEvent.preventDefault();
+mapEl.addEventListener('touchstart', e => {
+  if (e.touches.length !== 1) return;
+  e.preventDefault();
+  e.stopPropagation();
+  isDrawing = true;
   const touch = e.touches[0];
-  const latlng = map.containerPointToLatLng([touch.clientX, touch.clientY]);
+  const rect = mapEl.getBoundingClientRect();
+  const latlng = map.containerPointToLatLng([touch.clientX - rect.left, touch.clientY - rect.top]);
+  drawnPoints = [[latlng.lat, latlng.lng]];
+  if (drawnPolyline) {
+    map.removeLayer(drawnPolyline);
+    drawnPolyline = null;
+  }
+}, { passive: false, capture: true });
+
+mapEl.addEventListener('touchmove', e => {
+  if (!isDrawing || e.touches.length !== 1) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const touch = e.touches[0];
+  const rect = mapEl.getBoundingClientRect();
+  const latlng = map.containerPointToLatLng([touch.clientX - rect.left, touch.clientY - rect.top]);
   drawnPoints.push([latlng.lat, latlng.lng]);
   if (drawnPolyline) map.removeLayer(drawnPolyline);
   drawnPolyline = L.polyline(drawnPoints, { color: '#e63946', weight: 3 }).addTo(map);
-});
+}, { passive: false, capture: true });
 
-map.on('touchend', () => {
+mapEl.addEventListener('touchend', e => {
   if (!isDrawing) return;
+  e.preventDefault();
+  e.stopPropagation();
   isDrawing = false;
   if (drawnPoints.length > 1) {
     lastClassified = classifyAndShow();
   }
-});
+}, { passive: false, capture: true });
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 async function init() {
