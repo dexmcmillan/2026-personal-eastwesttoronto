@@ -86,18 +86,37 @@ async function loadAggregates() {
   }
 }
 
-// ── Refresh label sizes after zoom ────────────────────────────────────────
+// ── Refresh label visibility after zoom ───────────────────────────────────
 function refreshLabels() {
   geojsonData.features.forEach((feature, i) => {
-    const marker = labelLayers[i];
-    if (!marker) return;
     const name = feature.properties.AREA_NAME;
-    const fontSize = labelFontSize(feature);
-    marker.setIcon(L.divIcon({
-      className: 'neighbourhood-label',
-      html: buildLabel(name, fontSize),
-      iconSize: null,
-    }));
+    const marker = labelLayers[i];
+    const fits = labelFits(feature, name);
+
+    if (fits && !marker) {
+      // Should now show — add it
+      const center = turf.centerOfMass(feature);
+      const [lng, lat] = center.geometry.coordinates;
+      const newMarker = L.marker([lat, lng], {
+        icon: L.divIcon({
+          className: 'neighbourhood-label',
+          html: buildLabel(name),
+          iconSize: null,
+        }),
+      }).addTo(map);
+      labelLayers[i] = newMarker;
+    } else if (!fits && marker) {
+      // Shouldn't show — remove it
+      map.removeLayer(marker);
+      labelLayers[i] = null;
+    } else if (fits && marker) {
+      // Still shown — update content (aggregate % may have changed)
+      marker.setIcon(L.divIcon({
+        className: 'neighbourhood-label',
+        html: buildLabel(name),
+        iconSize: null,
+      }));
+    }
   });
 }
 
@@ -165,8 +184,8 @@ function renderMask() {
     style: {
       fillColor: '#f8f8f8',
       fillOpacity: 1,
-      color: '#ccc',
-      weight: 0.5,
+      color: '#888',
+      weight: 1.5,
     },
     pane: 'maskPane',
     interactive: false,
@@ -190,14 +209,16 @@ function renderNeighbourhoods() {
 
   geojsonData.features.forEach(feature => {
     const name = feature.properties.AREA_NAME;
+    if (!labelFits(feature, name)) {
+      labelLayers.push(null);
+      return;
+    }
     const center = turf.centerOfMass(feature);
     const [lng, lat] = center.geometry.coordinates;
-    const fontSize = labelFontSize(feature);
-    const label = buildLabel(name, fontSize);
     const marker = L.marker([lat, lng], {
       icon: L.divIcon({
         className: 'neighbourhood-label',
-        html: label,
+        html: buildLabel(name),
         iconSize: null,
       }),
     }).addTo(map);
@@ -208,39 +229,55 @@ function renderNeighbourhoods() {
 function styleForNeighbourhood(name) {
   const agg = aggregates[name];
   if (!agg || (agg.east === 0 && agg.west === 0)) {
-    return { fillColor: COLOUR_NEUTRAL, fillOpacity: 0.02, color: '#aaa', weight: 0.5 };
+    return { fillColor: COLOUR_NEUTRAL, fillOpacity: 0.02, color: '#888', weight: 1.5 };
   }
   const total = agg.east + agg.west;
   const eastPct = agg.east / total;
   const confidence = Math.abs(eastPct - 0.5) * 2;
   const opacity = OPACITY_MIN + confidence * (OPACITY_MAX - OPACITY_MIN);
   const colour = eastPct >= 0.5 ? COLOUR_EAST : COLOUR_WEST;
-  return { fillColor: colour, fillOpacity: opacity, color: '#aaa', weight: 0.5 };
+  return { fillColor: colour, fillOpacity: opacity, color: colour, weight: 1.5 };
 }
 
-function buildLabel(name, fontSize) {
+const LABEL_FONT_SIZE = 11;   // fixed px
+const LABEL_CHAR_WIDTH = 6.2; // approx px per character at 11px Inter
+const LABEL_LINE_HEIGHT = 14; // px per line
+
+function buildLabel(name) {
   const agg = aggregates[name];
   const pctHtml = (agg && (agg.east + agg.west) > 0)
     ? `<span class="pct">${Math.round((agg.east / (agg.east + agg.west)) * 100)}% East</span>`
     : '';
-  return `<span style="font-size:${fontSize}px">${name}${pctHtml}</span>`;
+  return `${name}${pctHtml}`;
 }
 
-// Compute a font size for a neighbourhood based on its pixel bounding-box width
-function labelFontSize(feature) {
+// Returns pixel bounding box {w, h} of a feature at current zoom
+function featurePixelSize(feature) {
   const geom = feature.geometry;
   let coords = [];
   if (geom.type === 'Polygon') coords = geom.coordinates[0];
   else if (geom.type === 'MultiPolygon') coords = geom.coordinates[0][0];
-  if (!coords.length) return 9;
-
+  if (!coords.length) return { w: 0, h: 0 };
   const points = coords.map(([lng, lat]) => map.latLngToContainerPoint([lat, lng]));
   const xs = points.map(p => p.x);
   const ys = points.map(p => p.y);
-  const w = Math.max(...xs) - Math.min(...xs);
-  const h = Math.max(...ys) - Math.min(...ys);
-  const size = Math.min(w, h);
-  return Math.min(13, Math.max(7, Math.round(size * 0.12)));
+  return {
+    w: Math.max(...xs) - Math.min(...xs),
+    h: Math.max(...ys) - Math.min(...ys),
+  };
+}
+
+// Returns true if the label text would fit inside the feature's pixel bbox
+function labelFits(feature, name) {
+  const { w, h } = featurePixelSize(feature);
+  const agg = aggregates[name];
+  const hasPct = agg && (agg.east + agg.west) > 0;
+  const longestLine = hasPct
+    ? Math.max(name.length, '100% East'.length)
+    : name.length;
+  const labelW = longestLine * LABEL_CHAR_WIDTH;
+  const labelH = hasPct ? LABEL_LINE_HEIGHT * 2 : LABEL_LINE_HEIGHT;
+  return w > labelW + 8 && h > labelH + 4;
 }
 
 // ── Drawing ────────────────────────────────────────────────────────────────
@@ -392,11 +429,11 @@ function highlightClassification(classified) {
     style: feature => {
       const name = feature.properties.AREA_NAME;
       if (classified.east.includes(name)) {
-        return { fillColor: COLOUR_EAST, fillOpacity: 0.12, color: '#aaa', weight: 0.5 };
+        return { fillColor: COLOUR_EAST, fillOpacity: 0.18, color: COLOUR_EAST, weight: 1.5 };
       } else if (classified.west.includes(name)) {
-        return { fillColor: COLOUR_WEST, fillOpacity: 0.12, color: '#aaa', weight: 0.5 };
+        return { fillColor: COLOUR_WEST, fillOpacity: 0.18, color: COLOUR_WEST, weight: 1.5 };
       }
-      return { fillColor: COLOUR_NEUTRAL, fillOpacity: 0.02, color: '#aaa', weight: 0.5 };
+      return { fillColor: COLOUR_NEUTRAL, fillOpacity: 0.02, color: '#888', weight: 1.5 };
     },
   }).addTo(map);
 }
