@@ -656,6 +656,7 @@ function clearDraw() {
 document.getElementById('btn-redraw').addEventListener('click', () => {
   clearDraw();
   hideControls();
+  if (hasSubmitted) loadAggregates();
 });
 
 document.getElementById('btn-submit').addEventListener('click', async () => {
