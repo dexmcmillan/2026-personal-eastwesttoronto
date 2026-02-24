@@ -197,7 +197,7 @@ function renderNeighbourhoods() {
   if (neighbourhoodLayer) {
     map.removeLayer(neighbourhoodLayer);
   }
-  labelLayers.forEach(l => map.removeLayer(l));
+  labelLayers.forEach(l => { if (l) map.removeLayer(l); });
   labelLayers = [];
 
   neighbourhoodLayer = L.geoJSON(geojsonData, {
@@ -422,7 +422,7 @@ function getSideOfLine(point, linePoints) {
 
 function highlightClassification(classified) {
   if (neighbourhoodLayer) map.removeLayer(neighbourhoodLayer);
-  labelLayers.forEach(l => map.removeLayer(l));
+  labelLayers.forEach(l => { if (l) map.removeLayer(l); });
   labelLayers = [];
 
   neighbourhoodLayer = L.geoJSON(geojsonData, {
