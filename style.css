@@ -184,6 +184,50 @@ button:active {
   display: none;
 }
 
+/* ── Dynamic results legend ── */
+#legend-results {
+  width: 100%;
+  max-width: 340px;
+  margin-top: 6px;
+}
+
+#legend-results.hidden {
+  display: none;
+}
+
+#legend-bar-wrap {
+  display: flex;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  width: 100%;
+}
+
+#legend-bar-west {
+  background: #4a90d9;
+  height: 100%;
+  transition: width 0.4s ease;
+}
+
+#legend-bar-east {
+  background: #e07b39;
+  height: 100%;
+  transition: width 0.4s ease;
+  flex: 1;
+}
+
+#legend-bar-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(255,255,255,0.8);
+}
+
+#legend-pct-west { color: #7ab8f5; }
+#legend-pct-east { color: #f0a06a; }
+
 /* ── Heatmap percentage labels ── */
 .heatmap-label {
   background: transparent !important;

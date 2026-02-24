@@ -255,6 +255,13 @@ function updateHeatmapLabels(eastCounts, westCounts) {
   const overallEastPct  = Math.round((totalEast / grandTotal) * 100);
   const overallWestPct  = 100 - overallEastPct;
 
+  // Update the header legend bar
+  document.getElementById('legend').classList.add('hidden');
+  document.getElementById('legend-results').classList.remove('hidden');
+  document.getElementById('legend-bar-west').style.width = overallWestPct + '%';
+  document.getElementById('legend-pct-west').textContent = overallWestPct + '% West';
+  document.getElementById('legend-pct-east').textContent = overallEastPct + '% East';
+
   function placeLabel(lat, lng, html) {
     const marker = L.marker([lat, lng], {
       icon: L.divIcon({
