@@ -368,11 +368,16 @@ document.getElementById('btn-submit').addEventListener('click', async () => {
   btn.disabled = true;
   btn.textContent = 'Submitting...';
 
+  // Thin points to every 5th to reduce document size, store as flat objects
+  const thinned = drawnPoints
+    .filter((_, i) => i % 5 === 0)
+    .map(p => ({ lat: Number(p[0]), lng: Number(p[1]) }));
+
   await setDoc(doc(db, 'submissions', userId), {
     timestamp: new Date().toISOString(),
-    line: drawnPoints.map(([lat, lng]) => ({ lat, lng })),
-    east: lastClassified.east,
-    west: lastClassified.west,
+    line: thinned,
+    east: lastClassified.east.map(String),
+    west: lastClassified.west.map(String),
   });
 
   const toast = document.getElementById('toast');
