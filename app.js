@@ -313,6 +313,40 @@ document.getElementById('btn-submit').addEventListener('click', async () => {
   renderNeighbourhoods();
 });
 
+// ── Touch support ──────────────────────────────────────────────────────────
+map.on('touchstart', e => {
+  if (e.touches && e.touches.length === 1) {
+    isDrawing = true;
+    const touch = e.touches[0];
+    const latlng = map.containerPointToLatLng([touch.clientX, touch.clientY]);
+    drawnPoints = [[latlng.lat, latlng.lng]];
+    if (drawnPolyline) {
+      map.removeLayer(drawnPolyline);
+      drawnPolyline = null;
+    }
+    map.dragging.disable();
+  }
+});
+
+map.on('touchmove', e => {
+  if (!isDrawing || !e.touches || e.touches.length !== 1) return;
+  e.originalEvent.preventDefault();
+  const touch = e.touches[0];
+  const latlng = map.containerPointToLatLng([touch.clientX, touch.clientY]);
+  drawnPoints.push([latlng.lat, latlng.lng]);
+  if (drawnPolyline) map.removeLayer(drawnPolyline);
+  drawnPolyline = L.polyline(drawnPoints, { color: '#e63946', weight: 3 }).addTo(map);
+});
+
+map.on('touchend', () => {
+  if (!isDrawing) return;
+  isDrawing = false;
+  map.dragging.enable();
+  if (drawnPoints.length > 1) {
+    lastClassified = classifyAndShow();
+  }
+});
+
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 async function init() {
   await loadAggregates();
