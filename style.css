@@ -44,34 +44,6 @@ body {
   font-weight: 400;
 }
 
-/* ── Legend ── */
-#legend {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-top: 4px;
-}
-
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.78rem;
-  font-weight: 500;
-  color: rgba(255,255,255,0.75);
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-.legend-swatch {
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
-  display: inline-block;
-}
-
-.legend-swatch.west { background: #4a90d9; }
-.legend-swatch.east { background: #e07b39; }
 
 /* ── Map ── */
 #map {

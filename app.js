@@ -115,6 +115,15 @@ const HeatmapCanvasLayer = L.Layer.extend({
     this._redraw();
   },
 
+  clear() {
+    this._eastCounts = null;
+    this._westCounts = null;
+    if (this._canvas) {
+      const ctx = this._canvas.getContext('2d');
+      ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
+    }
+  },
+
   _redraw() {
     if (!this._eastCounts || !gridBbox) return;
     const [minLng, minLat, maxLng, maxLat] = gridBbox;
@@ -150,7 +159,7 @@ const HeatmapCanvasLayer = L.Layer.extend({
 
         const eastPct = e / total;
         ctx.fillStyle = lerpColour(COLOUR_WEST_RGB, COLOUR_EAST_RGB, eastPct);
-        ctx.globalAlpha = 0.65;
+        ctx.globalAlpha = 0.4;
         // Use floor for position and ceil+1 for size to ensure cells are flush
         const px = Math.floor(c * cellW);
         const py = Math.floor(canvasRow * cellH);
@@ -272,7 +281,6 @@ function updateHeatmapLabels(eastCounts, westCounts) {
   const overallWestPct = 100 - overallEastPct;
 
   // Update the header legend bar
-  document.getElementById('legend').classList.add('hidden');
   document.getElementById('legend-results').classList.remove('hidden');
   document.getElementById('legend-bar-west').style.width = overallWestPct + '%';
   document.getElementById('legend-pct-west').textContent = overallWestPct + '% West';
@@ -517,6 +525,7 @@ map.on('mousedown', e => {
   isDrawing = true;
   drawnPoints = [[e.latlng.lat, e.latlng.lng]];
   if (drawnPolyline) { map.removeLayer(drawnPolyline); drawnPolyline = null; }
+  if (heatmapLayer._eastCounts) clearHeatmap();
   map.dragging.disable();
   startEdgePan();
 });
@@ -550,6 +559,7 @@ mapEl.addEventListener('touchstart', e => {
   const latlng = map.containerPointToLatLng([touch.clientX - rect.left, touch.clientY - rect.top]);
   drawnPoints = [[latlng.lat, latlng.lng]];
   if (drawnPolyline) { map.removeLayer(drawnPolyline); drawnPolyline = null; }
+  if (heatmapLayer._eastCounts) clearHeatmap();
 }, { passive: false, capture: true });
 
 mapEl.addEventListener('touchmove', e => {
@@ -619,6 +629,13 @@ function showToast(msg) {
   toast.textContent = msg;
   toast.classList.remove('hidden');
   setTimeout(() => toast.classList.add('hidden'), 3000);
+}
+
+function clearHeatmap() {
+  heatmapLayer.clear();
+  heatmapLabelMarkers.forEach(m => map.removeLayer(m));
+  heatmapLabelMarkers = [];
+  document.getElementById('legend-results').classList.add('hidden');
 }
 
 function clearDraw() {
