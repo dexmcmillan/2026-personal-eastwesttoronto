@@ -184,44 +184,6 @@ button:active {
   display: none;
 }
 
-/* ── Neighbourhood labels ── */
-/* Leaflet wrapper — zero size, positioned at the coordinate */
-.neighbourhood-label {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  pointer-events: none;
-  transition: opacity 0.2s;
-  overflow: visible !important;
-}
-
-/* Inner label — centred on the anchor point */
-.neighbourhood-label span.label-inner {
-  display: block;
-  position: absolute;
-  transform: translate(-50%, -50%);
-  white-space: nowrap;
-  font-family: 'Inter', -apple-system, sans-serif;
-  font-weight: 600;
-  font-size: 11px;
-  color: #222;
-  text-shadow: 0 0 4px #fff, 0 0 4px #fff, 0 0 2px #fff;
-  line-height: 1.2;
-  text-align: center;
-}
-
-.neighbourhood-label .label-inner .pct {
-  font-weight: 400;
-  opacity: 0.75;
-  display: block;
-}
-
-/* Hide labels at low zoom — toggled by JS */
-#map.labels-hidden .neighbourhood-label {
-  opacity: 0;
-  pointer-events: none;
-}
-
 /* ── Loading overlay ── */
 #loading {
   position: fixed;

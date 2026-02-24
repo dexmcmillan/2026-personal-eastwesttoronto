@@ -1,5 +1,5 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
-import { getFirestore, collection, doc, setDoc, getDocs } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+import { getFirestore, collection, doc, setDoc, getDocs, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 
 // ── Firebase config ────────────────────────────────────────────────────────
 const firebaseConfig = {
@@ -13,17 +13,17 @@ const firebaseConfig = {
 
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
+const COLLECTION = 'submissions';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const TORONTO_CENTER = [43.7181, -79.3762];
 const TORONTO_ZOOM = 11;
 
-const COLOUR_NEUTRAL = '#aaaaaa';
-const COLOUR_EAST = '#e07b39';   // orange
-const COLOUR_WEST = '#4a90d9';   // blue
-const OPACITY_MIN = 0.02;
-const OPACITY_MAX = 0.1;
-const LABEL_ZOOM_THRESHOLD = 12;  // labels appear at this zoom and above
+const COLOUR_WEST_RGB = { r: 74,  g: 144, b: 217 };  // #4a90d9
+const COLOUR_EAST_RGB = { r: 224, g: 123, b: 57  };  // #e07b39
+
+const GRID_COLS = 80;
+const GRID_ROWS = 80;
 
 // ── Map setup ──────────────────────────────────────────────────────────────
 const map = L.map('map', {
@@ -38,24 +38,27 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
   opacity: 1,
 }).addTo(map);
 
-// Pane for mask — sits above tiles (200) but below neighbourhood polygons (400)
+// Pane for mask — sits above tiles but below drawn lines
 map.createPane('maskPane');
 map.getPane('maskPane').style.zIndex = 300;
 map.getPane('maskPane').style.pointerEvents = 'none';
 
 // ── State ──────────────────────────────────────────────────────────────────
-let geojsonData = null;
-let neighbourhoodLayer = null;
-let labelLayers = [];
-let aggregates = {};
+let torontoFeature = null;   // GeoJSON Feature (Polygon) for city boundary
+let gridBbox = null;         // [minLng, minLat, maxLng, maxLat]
+let cellCentroids = null;    // Float64Array — lng,lat pairs for each cell
+let inTorontoMask = null;    // Uint8Array — 1 if cell centroid is inside Toronto
 
 let isDrawing = false;
 let drawnPoints = [];
 let drawnPolyline = null;
-let lastClassified = null;
+let splitResult = null;      // { east: coords[][], west: coords[][] } after drawing
 let hasSubmitted = localStorage.getItem('eastwest_submitted') === 'true';
 
-// ── UUID (per-browser identity for deduplication) ──────────────────────────
+let heatmapLayer = null;
+let heatmapWorker = null;
+
+// ── UUID ───────────────────────────────────────────────────────────────────
 function getUserId() {
   let id = localStorage.getItem('eastwest_uuid');
   if (!id) {
@@ -66,132 +69,121 @@ function getUserId() {
 }
 const userId = getUserId();
 
-// ── Load aggregates from Firestore ─────────────────────────────────────────
-async function loadAggregates() {
-  try {
-    const snapshot = await getDocs(collection(db, 'submissions'));
-    const counts = {};
-
-    snapshot.forEach(docSnap => {
-      const data = docSnap.data();
-      (data.east || []).forEach(name => {
-        if (!counts[name]) counts[name] = { east: 0, west: 0 };
-        counts[name].east++;
-      });
-      (data.west || []).forEach(name => {
-        if (!counts[name]) counts[name] = { east: 0, west: 0 };
-        counts[name].west++;
-      });
-    });
-
-    aggregates = counts;
-    updateSubmissionCount(snapshot.size);
-  } catch (e) {
-    console.warn('Could not load aggregates from Firestore:', e);
-    aggregates = {};
-  }
+// ── Colour helpers ─────────────────────────────────────────────────────────
+function lerpColour(a, b, t) {
+  const r  = Math.round(a.r + (b.r - a.r) * t);
+  const g  = Math.round(a.g + (b.g - a.g) * t);
+  const bl = Math.round(a.b + (b.b - a.b) * t);
+  return `rgb(${r},${g},${bl})`;
 }
 
-function updateSubmissionCount(count) {
-  const noun = count === 1 ? 'other' : 'others';
-  document.getElementById('instructions').textContent =
-    `Draw a line across the map, then submit your answer to see how ${count} ${noun} have drawn the line.`;
-}
+// ── Heatmap canvas layer ───────────────────────────────────────────────────
+const HeatmapCanvasLayer = L.Layer.extend({
+  onAdd(map) {
+    this._map = map;
+    this._canvas = L.DomUtil.create('canvas', 'heatmap-canvas');
+    this._canvas.style.position = 'absolute';
+    this._canvas.style.pointerEvents = 'none';
+    map.getPane('overlayPane').appendChild(this._canvas);
+    map.on('moveend zoomend', this._redraw, this);
+    map.on('move zoom',       this._reposition, this);
+  },
 
-// ── Refresh label visibility after zoom ───────────────────────────────────
-function refreshLabels() {
-  geojsonData.features.forEach((feature, i) => {
-    const name = feature.properties.AREA_NAME;
-    const marker = labelLayers[i];
-    const fits = labelFits(feature, name);
+  onRemove(map) {
+    this._canvas.remove();
+    map.off('moveend zoomend', this._redraw, this);
+    map.off('move zoom',       this._reposition, this);
+  },
 
-    if (fits && !marker) {
-      // Should now show — add it
-      const center = turf.centerOfMass(feature);
-      const [lng, lat] = center.geometry.coordinates;
-      const newMarker = L.marker([lat, lng], {
-        icon: L.divIcon({
-          className: 'neighbourhood-label',
-          html: buildLabel(name),
-          iconSize: [0, 0],
-          iconAnchor: [0, 0],
-        }),
-      }).addTo(map);
-      labelLayers[i] = newMarker;
-    } else if (!fits && marker) {
-      // Shouldn't show — remove it
-      map.removeLayer(marker);
-      labelLayers[i] = null;
-    } else if (fits && marker) {
-      // Still shown — update content (aggregate % may have changed)
-      marker.setIcon(L.divIcon({
-        className: 'neighbourhood-label',
-        html: buildLabel(name),
-        iconSize: [0, 0],
-          iconAnchor: [0, 0],
-      }));
+  update(eastCounts, westCounts) {
+    this._eastCounts = eastCounts;
+    this._westCounts = westCounts;
+    this._redraw();
+  },
+
+  _redraw() {
+    if (!this._eastCounts || !gridBbox) return;
+    const [minLng, minLat, maxLng, maxLat] = gridBbox;
+
+    const topLeft     = this._map.latLngToLayerPoint([maxLat, minLng]);
+    const bottomRight = this._map.latLngToLayerPoint([minLat, maxLng]);
+
+    const width  = Math.round(bottomRight.x - topLeft.x);
+    const height = Math.round(bottomRight.y - topLeft.y);
+
+    this._canvas.width  = width;
+    this._canvas.height = height;
+    L.DomUtil.setPosition(this._canvas, topLeft);
+
+    const ctx = this._canvas.getContext('2d');
+    ctx.clearRect(0, 0, width, height);
+
+    const cellW = width  / GRID_COLS;
+    const cellH = height / GRID_ROWS;
+
+    for (let r = 0; r < GRID_ROWS; r++) {
+      for (let c = 0; c < GRID_COLS; c++) {
+        const idx = r * GRID_COLS + c;
+        if (!inTorontoMask[idx]) continue;
+
+        const e = this._eastCounts[idx];
+        const w = this._westCounts[idx];
+        const total = e + w;
+        if (total === 0) continue;
+
+        const eastPct = e / total;
+        ctx.fillStyle = lerpColour(COLOUR_WEST_RGB, COLOUR_EAST_RGB, eastPct);
+        ctx.globalAlpha = 0.65;
+        ctx.fillRect(
+          Math.round(c * cellW),
+          Math.round(r * cellH),
+          Math.ceil(cellW),
+          Math.ceil(cellH)
+        );
+      }
     }
-  });
-}
+    ctx.globalAlpha = 1;
+  },
 
-// ── Zoom-based label visibility ────────────────────────────────────────────
-function updateLabelVisibility() {
-  const mapEl = document.getElementById('map');
-  if (map.getZoom() >= LABEL_ZOOM_THRESHOLD) {
-    mapEl.classList.remove('labels-hidden');
-  } else {
-    mapEl.classList.add('labels-hidden');
-  }
-}
-
-map.on('zoomend', () => {
-  updateLabelVisibility();
-  if (geojsonData) refreshLabels();
+  _reposition() {
+    if (!this._canvas || !this._eastCounts || !gridBbox) return;
+    const [minLng, , , maxLat] = gridBbox;
+    const topLeft = this._map.latLngToLayerPoint([maxLat, minLng]);
+    L.DomUtil.setPosition(this._canvas, topLeft);
+  },
 });
 
-// ── Load GeoJSON ───────────────────────────────────────────────────────────
-async function loadNeighbourhoods() {
-  const response = await fetch('data/toronto-neighbourhoods.geojson');
-  geojsonData = await response.json();
+// ── Grid init ──────────────────────────────────────────────────────────────
+function initGrid() {
+  gridBbox = turf.bbox(torontoFeature);
+  const [minLng, minLat, maxLng, maxLat] = gridBbox;
+  const cellW = (maxLng - minLng) / GRID_COLS;
+  const cellH = (maxLat - minLat) / GRID_ROWS;
 
-  // Fit map to neighbourhood bounds and lock scroll-out to that extent
-  const bounds = L.geoJSON(geojsonData).getBounds();
-  map.fitBounds(bounds, { padding: [-40, -40] });
-  map.setMaxBounds(bounds.pad(0.15));
+  const total = GRID_COLS * GRID_ROWS;
+  cellCentroids = new Float64Array(total * 2);
+  inTorontoMask = new Uint8Array(total);
 
-  renderMask();
-  renderNeighbourhoods();
-  updateLabelVisibility();
-  document.getElementById('loading').classList.add('hidden');
-}
-
-// ── Mask: white overlay outside Toronto neighbourhood bounds ───────────────
-function renderMask() {
-  // Build a union of all neighbourhood polygons using Turf
-  let union = null;
-  for (const feature of geojsonData.features) {
-    try {
-      const geom = feature.geometry;
-      let poly;
-      if (geom.type === 'Polygon') {
-        poly = turf.polygon(geom.coordinates);
-      } else if (geom.type === 'MultiPolygon') {
-        poly = turf.multiPolygon(geom.coordinates);
-      } else {
-        continue;
-      }
-      union = union ? turf.union(union, poly) : poly;
-    } catch (e) {
-      // skip features that fail union
+  for (let r = 0; r < GRID_ROWS; r++) {
+    for (let c = 0; c < GRID_COLS; c++) {
+      const idx = r * GRID_COLS + c;
+      const lng = minLng + (c + 0.5) * cellW;
+      const lat = minLat + (r + 0.5) * cellH;
+      cellCentroids[idx * 2]     = lng;
+      cellCentroids[idx * 2 + 1] = lat;
+      inTorontoMask[idx] = turf.booleanPointInPolygon(
+        turf.point([lng, lat]), torontoFeature
+      ) ? 1 : 0;
     }
   }
-  if (!union) return;
+}
 
-  // Create an inverted mask: world bbox with Toronto union as a hole
+// ── Mask: semi-opaque overlay outside Toronto ──────────────────────────────
+function renderMask() {
   const world = turf.polygon([[
     [-180, -90], [180, -90], [180, 90], [-180, 90], [-180, -90]
   ]]);
-  const mask = turf.difference(world, union);
+  const mask = turf.difference(world, torontoFeature);
   if (!mask) return;
 
   L.geoJSON(mask, {
@@ -206,101 +198,144 @@ function renderMask() {
   }).addTo(map);
 }
 
-// ── Render neighbourhood polygons ──────────────────────────────────────────
-function renderNeighbourhoods() {
-  if (neighbourhoodLayer) {
-    map.removeLayer(neighbourhoodLayer);
-  }
-  labelLayers.forEach(l => { if (l) map.removeLayer(l); });
-  labelLayers = [];
+// ── Load boundary ──────────────────────────────────────────────────────────
+async function loadBoundary() {
+  const res = await fetch('data/toronto-boundary.geojson');
+  torontoFeature = await res.json();
 
-  neighbourhoodLayer = L.geoJSON(geojsonData, {
-    style: feature => {
-      const name = feature.properties.AREA_NAME;
-      return styleForNeighbourhood(name);
-    },
-  }).addTo(map);
+  const bounds = L.geoJSON(torontoFeature).getBounds();
+  map.fitBounds(bounds, { padding: [-40, -40] });
+  map.setMaxBounds(bounds.pad(0.15));
 
-  geojsonData.features.forEach(feature => {
-    const name = feature.properties.AREA_NAME;
-    if (!labelFits(feature, name)) {
-      labelLayers.push(null);
-      return;
+  renderMask();
+  initGrid();
+  document.getElementById('loading').classList.add('hidden');
+}
+
+// ── Worker setup ───────────────────────────────────────────────────────────
+function initWorker() {
+  heatmapWorker = new Worker('heatmap-worker.js');
+  heatmapWorker.onmessage = ({ data }) => {
+    if (data.type === 'result') {
+      // Restore transferred buffers so grid is still usable
+      cellCentroids = new Float64Array(data.centroids);
+      inTorontoMask = new Uint8Array(data.inMask);
+      heatmapLayer.update(
+        new Int32Array(data.eastCounts),
+        new Int32Array(data.westCounts)
+      );
     }
-    const center = turf.centerOfMass(feature);
-    const [lng, lat] = center.geometry.coordinates;
-    const marker = L.marker([lat, lng], {
-      icon: L.divIcon({
-        className: 'neighbourhood-label',
-        html: buildLabel(name),
-        iconSize: [0, 0],
-          iconAnchor: [0, 0],
-      }),
-    }).addTo(map);
-    labelLayers.push(marker);
-  });
-}
-
-function styleForNeighbourhood(name) {
-  if (!hasSubmitted) {
-    return { fillColor: COLOUR_NEUTRAL, fillOpacity: 0.08, color: '#888', weight: 1.5 };
-  }
-  const agg = aggregates[name];
-  if (!agg || (agg.east === 0 && agg.west === 0)) {
-    return { fillColor: COLOUR_NEUTRAL, fillOpacity: 0.02, color: '#888', weight: 1.5 };
-  }
-  const total = agg.east + agg.west;
-  const eastPct = agg.east / total;
-  const confidence = Math.abs(eastPct - 0.5) * 2;
-  const opacity = OPACITY_MIN + confidence * (OPACITY_MAX - OPACITY_MIN);
-  const colour = eastPct >= 0.5 ? COLOUR_EAST : COLOUR_WEST;
-  return { fillColor: colour, fillOpacity: opacity, color: colour, weight: 1.5 };
-}
-
-const LABEL_FONT_SIZE = 11;   // fixed px
-const LABEL_CHAR_WIDTH = 6.2; // approx px per character at 11px Inter
-const LABEL_LINE_HEIGHT = 14; // px per line
-
-function buildLabel(name) {
-  const agg = hasSubmitted ? aggregates[name] : null;
-  const pctHtml = (agg && (agg.east + agg.west) > 0)
-    ? `<span class="pct">${Math.round((agg.east / (agg.east + agg.west)) * 100)}% East</span>`
-    : '';
-  return `<span class="label-inner">${name}${pctHtml}</span>`;
-}
-
-// Returns pixel bounding box {w, h} of a feature at current zoom
-function featurePixelSize(feature) {
-  const geom = feature.geometry;
-  let coords = [];
-  if (geom.type === 'Polygon') coords = geom.coordinates[0];
-  else if (geom.type === 'MultiPolygon') coords = geom.coordinates[0][0];
-  if (!coords.length) return { w: 0, h: 0 };
-  const points = coords.map(([lng, lat]) => map.latLngToContainerPoint([lat, lng]));
-  const xs = points.map(p => p.x);
-  const ys = points.map(p => p.y);
-  return {
-    w: Math.max(...xs) - Math.min(...xs),
-    h: Math.max(...ys) - Math.min(...ys),
   };
 }
 
-// Returns true if the label text would fit inside the feature's pixel bbox
-function labelFits(feature, name) {
-  const { w, h } = featurePixelSize(feature);
-  const agg = aggregates[name];
-  const hasPct = agg && (agg.east + agg.west) > 0;
-  const longestLine = hasPct
-    ? Math.max(name.length, '100% East'.length)
-    : name.length;
-  const labelW = longestLine * LABEL_CHAR_WIDTH;
-  const labelH = hasPct ? LABEL_LINE_HEIGHT * 2 : LABEL_LINE_HEIGHT;
-  return w > labelW + 8 && h > labelH + 4;
+// ── Load aggregates from Firestore → post to worker ────────────────────────
+async function loadAggregates() {
+  try {
+    const snapshot = await getDocs(collection(db, COLLECTION));
+    updateSubmissionCount(snapshot.size);
+
+    if (!hasSubmitted) return;
+
+    const submissions = [];
+    snapshot.forEach(docSnap => {
+      const d = docSnap.data();
+      if (d.eastPolygon && d.westPolygon) {
+        submissions.push({ east: d.eastPolygon, west: d.westPolygon });
+      }
+    });
+
+    if (submissions.length === 0) return;
+
+    // Transfer typed arrays to worker to avoid copying
+    const centroidsCopy  = cellCentroids.slice();
+    const inMaskCopy     = inTorontoMask.slice();
+
+    heatmapWorker.postMessage({
+      type: 'compute',
+      submissions,
+      centroids: centroidsCopy,
+      inMask: inMaskCopy,
+      cols: GRID_COLS,
+      rows: GRID_ROWS,
+    }, [centroidsCopy.buffer, inMaskCopy.buffer]);
+
+  } catch (e) {
+    console.warn('Could not load aggregates from Firestore:', e);
+  }
+}
+
+function updateSubmissionCount(count) {
+  const noun = count === 1 ? 'other' : 'others';
+  document.getElementById('instructions').textContent =
+    `Draw a line across the map, then submit your answer to see how ${count} ${noun} have drawn the line.`;
+}
+
+// ── Line-splitting logic ───────────────────────────────────────────────────
+function extendLineBeyondBoundary(points) {
+  const [minLng, minLat, maxLng, maxLat] = gridBbox;
+  const diag = Math.hypot(maxLng - minLng, maxLat - minLat) * 2;
+
+  function extend(from, towards, dist) {
+    // points are [lat, lng]; work in lng/lat space
+    const dx = towards[1] - from[1];
+    const dy = towards[0] - from[0];
+    const len = Math.hypot(dx, dy);
+    if (len === 0) return from;
+    return [from[0] - (dy / len) * dist, from[1] - (dx / len) * dist];
+  }
+
+  const startExt = extend(points[0], points[1], diag);
+  const endExt   = extend(points[points.length - 1], points[points.length - 2], diag);
+  return [startExt, ...points, endExt];
+}
+
+function splitTorontoPolygon(drawnPoints) {
+  const extended = extendLineBeyondBoundary(drawnPoints);
+  // Convert [lat, lng] points to [lng, lat] for GeoJSON/Turf
+  const lineCoords = extended.map(([lat, lng]) => [lng, lat]);
+  const line = turf.lineString(lineCoords);
+
+  let pieces;
+  try {
+    pieces = turf.lineSplit(torontoFeature, line);
+  } catch (e) {
+    console.warn('lineSplit failed:', e);
+    return null;
+  }
+
+  if (!pieces || pieces.features.length < 2) return null;
+
+  // Sort pieces by centroid longitude: highest lng = east
+  const sorted = pieces.features
+    .map(f => ({ f, lng: turf.centroid(f).geometry.coordinates[0] }))
+    .sort((a, b) => b.lng - a.lng);
+
+  const eastFeature = sorted[0].f;
+
+  // Union any remaining pieces as west
+  let westFeature = sorted[1].f;
+  for (let i = 2; i < sorted.length; i++) {
+    try { westFeature = turf.union(westFeature, sorted[i].f); } catch (e) { /* skip */ }
+  }
+
+  // Extract outer ring coordinates
+  function outerRing(feature) {
+    const geom = feature.geometry;
+    if (geom.type === 'Polygon') return geom.coordinates[0];
+    if (geom.type === 'MultiPolygon') return geom.coordinates[0][0];
+    return null;
+  }
+
+  const east = outerRing(eastFeature);
+  const west = outerRing(westFeature);
+  if (!east || !west) return null;
+
+  return { east, west };
 }
 
 // ── Drawing ────────────────────────────────────────────────────────────────
-const EDGE_PAN_ZONE = 60;   // px from edge to trigger pan
-const EDGE_PAN_SPEED = 8;   // px per frame
+const EDGE_PAN_ZONE  = 60;
+const EDGE_PAN_SPEED = 8;
 let edgePanFrame = null;
 let lastMouseContainerPoint = null;
 
@@ -311,10 +346,10 @@ function startEdgePan() {
     const { x, y } = lastMouseContainerPoint;
     const { x: w, y: h } = map.getSize();
     let dx = 0, dy = 0;
-    if (x < EDGE_PAN_ZONE) dx = -EDGE_PAN_SPEED * (1 - x / EDGE_PAN_ZONE);
-    if (x > w - EDGE_PAN_ZONE) dx = EDGE_PAN_SPEED * (1 - (w - x) / EDGE_PAN_ZONE);
-    if (y < EDGE_PAN_ZONE) dy = -EDGE_PAN_SPEED * (1 - y / EDGE_PAN_ZONE);
-    if (y > h - EDGE_PAN_ZONE) dy = EDGE_PAN_SPEED * (1 - (h - y) / EDGE_PAN_ZONE);
+    if (x < EDGE_PAN_ZONE)     dx = -EDGE_PAN_SPEED * (1 - x / EDGE_PAN_ZONE);
+    if (x > w - EDGE_PAN_ZONE) dx =  EDGE_PAN_SPEED * (1 - (w - x) / EDGE_PAN_ZONE);
+    if (y < EDGE_PAN_ZONE)     dy = -EDGE_PAN_SPEED * (1 - y / EDGE_PAN_ZONE);
+    if (y > h - EDGE_PAN_ZONE) dy =  EDGE_PAN_SPEED * (1 - (h - y) / EDGE_PAN_ZONE);
     if (dx !== 0 || dy !== 0) map.panBy([dx, dy], { animate: false });
     edgePanFrame = requestAnimationFrame(step);
   }
@@ -328,10 +363,7 @@ function stopEdgePan() {
 map.on('mousedown', e => {
   isDrawing = true;
   drawnPoints = [[e.latlng.lat, e.latlng.lng]];
-  if (drawnPolyline) {
-    map.removeLayer(drawnPolyline);
-    drawnPolyline = null;
-  }
+  if (drawnPolyline) { map.removeLayer(drawnPolyline); drawnPolyline = null; }
   map.dragging.disable();
   startEdgePan();
 });
@@ -349,172 +381,10 @@ map.on('mouseup', () => {
   isDrawing = false;
   stopEdgePan();
   map.dragging.enable();
-  if (drawnPoints.length > 1) {
-    lastClassified = classifyAndShow();
-  }
+  if (drawnPoints.length > 1) finishDraw();
 });
 
-// ── Classification ─────────────────────────────────────────────────────────
-function classifyAndShow() {
-  const classified = { east: [], west: [] };
-
-  const line = turf.lineString(drawnPoints.map(([lat, lng]) => [lng, lat]));
-
-  geojsonData.features.forEach(feature => {
-    const name = feature.properties.AREA_NAME;
-
-    let polygons = [];
-    if (feature.geometry.type === 'Polygon') {
-      polygons = [turf.polygon(feature.geometry.coordinates)];
-    } else if (feature.geometry.type === 'MultiPolygon') {
-      polygons = feature.geometry.coordinates.map(coords => turf.polygon(coords));
-    }
-
-    let eastArea = 0;
-    let westArea = 0;
-
-    polygons.forEach(poly => {
-      try {
-        const split = turf.lineSplit(poly, line);
-        if (split.features.length < 2) {
-          const centroid = turf.centroid(poly);
-          const side = getSideOfLine(centroid.geometry.coordinates, drawnPoints);
-          if (side === 'east') eastArea += turf.area(poly);
-          else westArea += turf.area(poly);
-        } else {
-          split.features.forEach(piece => {
-            const pieceCentroid = turf.centroid(piece);
-            const side = getSideOfLine(pieceCentroid.geometry.coordinates, drawnPoints);
-            if (side === 'east') eastArea += turf.area(piece);
-            else westArea += turf.area(piece);
-          });
-        }
-      } catch (e) {
-        const centroid = turf.centroid(poly);
-        const side = getSideOfLine(centroid.geometry.coordinates, drawnPoints);
-        if (side === 'east') eastArea += turf.area(poly);
-        else westArea += turf.area(poly);
-      }
-    });
-
-    if (eastArea >= westArea) {
-      classified.east.push(name);
-    } else {
-      classified.west.push(name);
-    }
-  });
-
-  highlightClassification(classified);
-  showControls();
-  return classified;
-}
-
-function getSideOfLine(point, linePoints) {
-  let minDist = Infinity;
-  let sign = 0;
-
-  for (let i = 0; i < linePoints.length - 1; i++) {
-    const ax = linePoints[i][1];
-    const ay = linePoints[i][0];
-    const bx = linePoints[i + 1][1];
-    const by = linePoints[i + 1][0];
-    const px = point[0];
-    const py = point[1];
-
-    const dx = bx - ax;
-    const dy = by - ay;
-    const len2 = dx * dx + dy * dy;
-    const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
-    const closestX = ax + t * dx;
-    const closestY = ay + t * dy;
-    const dist = Math.hypot(px - closestX, py - closestY);
-
-    if (dist < minDist) {
-      minDist = dist;
-      sign = dx * (py - ay) - dy * (px - ax);
-    }
-  }
-
-  return sign > 0 ? 'west' : 'east';
-}
-
-function highlightClassification(classified) {
-  if (neighbourhoodLayer) map.removeLayer(neighbourhoodLayer);
-  labelLayers.forEach(l => { if (l) map.removeLayer(l); });
-  labelLayers = [];
-
-  neighbourhoodLayer = L.geoJSON(geojsonData, {
-    style: feature => {
-      const name = feature.properties.AREA_NAME;
-      if (classified.east.includes(name)) {
-        return { fillColor: COLOUR_EAST, fillOpacity: 0.18, color: COLOUR_EAST, weight: 1.5 };
-      } else if (classified.west.includes(name)) {
-        return { fillColor: COLOUR_WEST, fillOpacity: 0.18, color: COLOUR_WEST, weight: 1.5 };
-      }
-      return { fillColor: COLOUR_NEUTRAL, fillOpacity: 0.02, color: '#888', weight: 1.5 };
-    },
-  }).addTo(map);
-}
-
-function showControls() {
-  document.getElementById('controls-modal').classList.remove('hidden');
-}
-
-// ── Controls ───────────────────────────────────────────────────────────────
-document.getElementById('btn-redraw').addEventListener('click', () => {
-  if (drawnPolyline) {
-    map.removeLayer(drawnPolyline);
-    drawnPolyline = null;
-  }
-  drawnPoints = [];
-  lastClassified = null;
-  document.getElementById('controls-modal').classList.add('hidden');
-  renderNeighbourhoods();
-});
-
-document.getElementById('btn-submit').addEventListener('click', async () => {
-  if (!lastClassified) return;
-
-  const btn = document.getElementById('btn-submit');
-  btn.disabled = true;
-  btn.textContent = 'Submitting...';
-
-  // Thin points to every 5th to reduce document size, store as flat objects
-  const thinned = drawnPoints
-    .filter((_, i) => i % 5 === 0)
-    .map(p => ({ lat: Number(p[0]), lng: Number(p[1]) }));
-
-  await setDoc(doc(db, 'submissions', userId), {
-    timestamp: new Date().toISOString(),
-    line: thinned,
-    east: lastClassified.east.map(String),
-    west: lastClassified.west.map(String),
-  });
-
-  const toast = document.getElementById('toast');
-  toast.classList.remove('hidden');
-  setTimeout(() => toast.classList.add('hidden'), 3000);
-
-  hasSubmitted = true;
-  localStorage.setItem('eastwest_submitted', 'true');
-
-  await loadAggregates();
-
-  btn.disabled = false;
-  btn.textContent = 'Submit my answer';
-  document.getElementById('controls-modal').classList.add('hidden');
-
-  if (drawnPolyline) {
-    map.removeLayer(drawnPolyline);
-    drawnPolyline = null;
-  }
-  drawnPoints = [];
-  lastClassified = null;
-  renderNeighbourhoods();
-});
-
-// ── Touch support ──────────────────────────────────────────────────────────
-// ── Touch drawing (DOM-level to intercept before Leaflet's drag handler) ──
+// ── Touch drawing ──────────────────────────────────────────────────────────
 const mapEl = document.getElementById('map');
 
 mapEl.addEventListener('touchstart', e => {
@@ -523,21 +393,18 @@ mapEl.addEventListener('touchstart', e => {
   e.stopPropagation();
   isDrawing = true;
   const touch = e.touches[0];
-  const rect = mapEl.getBoundingClientRect();
+  const rect  = mapEl.getBoundingClientRect();
   const latlng = map.containerPointToLatLng([touch.clientX - rect.left, touch.clientY - rect.top]);
   drawnPoints = [[latlng.lat, latlng.lng]];
-  if (drawnPolyline) {
-    map.removeLayer(drawnPolyline);
-    drawnPolyline = null;
-  }
+  if (drawnPolyline) { map.removeLayer(drawnPolyline); drawnPolyline = null; }
 }, { passive: false, capture: true });
 
 mapEl.addEventListener('touchmove', e => {
   if (!isDrawing || e.touches.length !== 1) return;
   e.preventDefault();
   e.stopPropagation();
-  const touch = e.touches[0];
-  const rect = mapEl.getBoundingClientRect();
+  const touch  = e.touches[0];
+  const rect   = mapEl.getBoundingClientRect();
   const latlng = map.containerPointToLatLng([touch.clientX - rect.left, touch.clientY - rect.top]);
   drawnPoints.push([latlng.lat, latlng.lng]);
   if (drawnPolyline) map.removeLayer(drawnPolyline);
@@ -549,14 +416,103 @@ mapEl.addEventListener('touchend', e => {
   e.preventDefault();
   e.stopPropagation();
   isDrawing = false;
-  if (drawnPoints.length > 1) {
-    lastClassified = classifyAndShow();
-  }
+  if (drawnPoints.length > 1) finishDraw();
 }, { passive: false, capture: true });
+
+// ── Finish draw — preview split then show controls ─────────────────────────
+function finishDraw() {
+  const result = splitTorontoPolygon(drawnPoints);
+  if (!result) {
+    showToast("Line didn't cross Toronto cleanly — try drawing all the way across.");
+    return;
+  }
+  splitResult = result;
+
+  // Show a preview: east in orange, west in blue, on top of mask
+  if (window._previewLayer) { map.removeLayer(window._previewLayer); }
+  window._previewLayer = L.geoJSON({
+    type: 'FeatureCollection',
+    features: [
+      { type: 'Feature', geometry: { type: 'Polygon', coordinates: [result.east] } },
+      { type: 'Feature', geometry: { type: 'Polygon', coordinates: [result.west] } },
+    ],
+  }, {
+    style: feature => {
+      const centLng = turf.centroid(feature).geometry.coordinates[0];
+      const isEast  = centLng === turf.centroid({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [result.east] } }).geometry.coordinates[0];
+      return {
+        fillColor:   isEast ? '#e07b39' : '#4a90d9',
+        fillOpacity: 0.22,
+        color:       isEast ? '#e07b39' : '#4a90d9',
+        weight: 1.5,
+      };
+    },
+  }).addTo(map);
+
+  showControls();
+}
+
+// ── Controls ───────────────────────────────────────────────────────────────
+function showControls() {
+  document.getElementById('controls-modal').classList.remove('hidden');
+}
+
+function hideControls() {
+  document.getElementById('controls-modal').classList.add('hidden');
+}
+
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.remove('hidden');
+  setTimeout(() => toast.classList.add('hidden'), 3000);
+}
+
+function clearDraw() {
+  if (drawnPolyline) { map.removeLayer(drawnPolyline); drawnPolyline = null; }
+  if (window._previewLayer) { map.removeLayer(window._previewLayer); window._previewLayer = null; }
+  drawnPoints = [];
+  splitResult = null;
+}
+
+document.getElementById('btn-redraw').addEventListener('click', () => {
+  clearDraw();
+  hideControls();
+});
+
+document.getElementById('btn-submit').addEventListener('click', async () => {
+  if (!splitResult) return;
+
+  const btn = document.getElementById('btn-submit');
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+
+  await setDoc(doc(db, COLLECTION, userId), {
+    eastPolygon: splitResult.east,
+    westPolygon: splitResult.west,
+    ts: serverTimestamp(),
+  });
+
+  hasSubmitted = true;
+  localStorage.setItem('eastwest_submitted', 'true');
+
+  clearDraw();
+  hideControls();
+  showToast('Thanks! Your answer has been recorded.');
+
+  await loadAggregates();
+
+  btn.disabled = false;
+  btn.textContent = 'Submit my answer';
+});
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 async function init() {
+  initWorker();
+  heatmapLayer = new HeatmapCanvasLayer();
+  heatmapLayer.addTo(map);
+
+  await loadBoundary();
   await loadAggregates();
-  await loadNeighbourhoods();
 }
 init();
