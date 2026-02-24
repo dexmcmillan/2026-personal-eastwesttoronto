@@ -21,8 +21,9 @@ const TORONTO_ZOOM = 11;
 const COLOUR_NEUTRAL = '#aaaaaa';
 const COLOUR_EAST = '#e07b39';   // orange
 const COLOUR_WEST = '#4a90d9';   // blue
-const OPACITY_MIN = 0.08;
-const OPACITY_MAX = 0.45;
+const OPACITY_MIN = 0.05;
+const OPACITY_MAX = 0.3;
+const LABEL_ZOOM_THRESHOLD = 12;  // labels appear at this zoom and above
 
 // ── Map setup ──────────────────────────────────────────────────────────────
 const map = L.map('map', { zoomControl: true, minZoom: 10 }).setView(TORONTO_CENTER, TORONTO_ZOOM);
@@ -84,12 +85,32 @@ async function loadAggregates() {
   }
 }
 
+// ── Zoom-based label visibility ────────────────────────────────────────────
+function updateLabelVisibility() {
+  const mapEl = document.getElementById('map');
+  if (map.getZoom() >= LABEL_ZOOM_THRESHOLD) {
+    mapEl.classList.remove('labels-hidden');
+  } else {
+    mapEl.classList.add('labels-hidden');
+  }
+}
+
+map.on('zoomend', updateLabelVisibility);
+
 // ── Load GeoJSON ───────────────────────────────────────────────────────────
 async function loadNeighbourhoods() {
   const response = await fetch('data/toronto-neighbourhoods.geojson');
   geojsonData = await response.json();
+
+  // Fit map to neighbourhood bounds and lock scroll-out to that extent
+  const bounds = L.geoJSON(geojsonData).getBounds();
+  map.fitBounds(bounds, { padding: [20, 20] });
+  map.setMaxBounds(bounds.pad(0.15));
+
   renderMask();
   renderNeighbourhoods();
+  updateLabelVisibility();
+  document.getElementById('loading').classList.add('hidden');
 }
 
 // ── Mask: white overlay outside Toronto neighbourhood bounds ───────────────
@@ -167,7 +188,7 @@ function renderNeighbourhoods() {
 function styleForNeighbourhood(name) {
   const agg = aggregates[name];
   if (!agg || (agg.east === 0 && agg.west === 0)) {
-    return { fillColor: COLOUR_NEUTRAL, fillOpacity: 0.15, color: '#666', weight: 1 };
+    return { fillColor: COLOUR_NEUTRAL, fillOpacity: 0.08, color: '#888', weight: 0.5 };
   }
   const total = agg.east + agg.west;
   const eastPct = agg.east / total;
@@ -336,11 +357,11 @@ function highlightClassification(classified) {
     style: feature => {
       const name = feature.properties.AREA_NAME;
       if (classified.east.includes(name)) {
-        return { fillColor: COLOUR_EAST, fillOpacity: 0.35, color: '#666', weight: 1 };
+        return { fillColor: COLOUR_EAST, fillOpacity: 0.25, color: '#888', weight: 0.5 };
       } else if (classified.west.includes(name)) {
-        return { fillColor: COLOUR_WEST, fillOpacity: 0.35, color: '#666', weight: 1 };
+        return { fillColor: COLOUR_WEST, fillOpacity: 0.25, color: '#888', weight: 0.5 };
       }
-      return { fillColor: COLOUR_NEUTRAL, fillOpacity: 0.15, color: '#666', weight: 1 };
+      return { fillColor: COLOUR_NEUTRAL, fillOpacity: 0.08, color: '#888', weight: 0.5 };
     },
   }).addTo(map);
 }
