@@ -101,14 +101,12 @@ const HeatmapCanvasLayer = L.Layer.extend({
     this._canvas.style.position = 'absolute';
     this._canvas.style.pointerEvents = 'none';
     map.getPane('heatmapPane').appendChild(this._canvas);
-    map.on('moveend zoomend', this._redraw, this);
-    map.on('move zoom',       this._reposition, this);
+    map.on('moveend zoomend move zoom', this._redraw, this);
   },
 
   onRemove(map) {
     this._canvas.remove();
-    map.off('moveend zoomend', this._redraw, this);
-    map.off('move zoom',       this._reposition, this);
+    map.off('moveend zoomend move zoom', this._redraw, this);
   },
 
   update(eastCounts, westCounts) {
@@ -138,6 +136,9 @@ const HeatmapCanvasLayer = L.Layer.extend({
     const cellH = height / GRID_ROWS;
 
     for (let r = 0; r < GRID_ROWS; r++) {
+      // Grid rows are built south→north (r=0 = minLat = bottom of map).
+      // Canvas rows are top→bottom, so flip: canvasRow 0 = grid row (GRID_ROWS-1).
+      const canvasRow = GRID_ROWS - 1 - r;
       for (let c = 0; c < GRID_COLS; c++) {
         const idx = r * GRID_COLS + c;
         if (!inTorontoMask[idx]) continue;
@@ -152,20 +153,13 @@ const HeatmapCanvasLayer = L.Layer.extend({
         ctx.globalAlpha = 0.65;
         ctx.fillRect(
           Math.round(c * cellW),
-          Math.round(r * cellH),
+          Math.round(canvasRow * cellH),
           Math.ceil(cellW),
           Math.ceil(cellH)
         );
       }
     }
     ctx.globalAlpha = 1;
-  },
-
-  _reposition() {
-    if (!this._canvas || !this._eastCounts || !gridBbox) return;
-    const [minLng, , , maxLat] = gridBbox;
-    const topLeft = this._map.latLngToLayerPoint([maxLat, minLng]);
-    L.DomUtil.setPosition(this._canvas, topLeft);
   },
 });
 
