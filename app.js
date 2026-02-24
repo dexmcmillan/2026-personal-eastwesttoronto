@@ -236,23 +236,13 @@ async function loadBoundary() {
 let heatmapLabelMarkers = [];
 
 function updateHeatmapLabels(eastCounts, westCounts) {
-  // Remove old labels
   heatmapLabelMarkers.forEach(m => map.removeLayer(m));
   heatmapLabelMarkers = [];
 
-  // Bucket cells into three groups based on agreement level:
-  //   strongEast  — majority voted east with >2/3 agreement
-  //   strongWest  — majority voted west with >2/3 agreement
-  //   contested   — neither side has >2/3 agreement (the blended middle)
+  // Group cells by their exact east-vote fraction (e.g. 0, 0.5, 1.0).
+  // Each distinct fraction = one agreement band = one label.
   let totalEast = 0, totalWest = 0;
-
-  const groups = {
-    strongEast: { sumLng: 0, sumLat: 0, count: 0, pctSum: 0 },
-    strongWest: { sumLng: 0, sumLat: 0, count: 0, pctSum: 0 },
-    contested:  { sumLng: 0, sumLat: 0, count: 0, pctSum: 0 },
-  };
-
-  const AGREE_THRESHOLD = 2 / 3;
+  const bands = new Map(); // key: "e/total" string → { e, total, sumLng, sumLat, count }
 
   const total = GRID_COLS * GRID_ROWS;
   for (let i = 0; i < total; i++) {
@@ -261,27 +251,20 @@ function updateHeatmapLabels(eastCounts, westCounts) {
     if (e + w === 0) continue;
     totalEast += e;
     totalWest += w;
-    const lng = cellCentroids[i * 2];
-    const lat = cellCentroids[i * 2 + 1];
-    const cellEastPct = e / (e + w);
-
-    let g;
-    if (cellEastPct > AGREE_THRESHOLD)      g = groups.strongEast;
-    else if (cellEastPct < 1 - AGREE_THRESHOLD) g = groups.strongWest;
-    else                                    g = groups.contested;
-
-    g.sumLng += lng; g.sumLat += lat; g.count++;
-    g.pctSum += cellEastPct;
+    const key = `${e}/${e + w}`;
+    if (!bands.has(key)) bands.set(key, { e, total: e + w, sumLng: 0, sumLat: 0, count: 0 });
+    const b = bands.get(key);
+    b.sumLng += cellCentroids[i * 2];
+    b.sumLat += cellCentroids[i * 2 + 1];
+    b.count++;
   }
 
   const grandTotal = totalEast + totalWest;
   if (grandTotal === 0) return;
 
-  // Overall split for the legend bar
+  // Update the header legend bar
   const overallEastPct = Math.round((totalEast / grandTotal) * 100);
   const overallWestPct = 100 - overallEastPct;
-
-  // Update the header legend bar
   document.getElementById('legend-results').classList.remove('hidden');
   document.getElementById('legend-bar-west').style.width = overallWestPct + '%';
   document.getElementById('legend-pct-west').textContent = overallWestPct + '% West';
@@ -301,32 +284,21 @@ function updateHeatmapLabels(eastCounts, westCounts) {
     heatmapLabelMarkers.push(marker);
   }
 
-  const { strongEast, strongWest, contested } = groups;
-
-  if (strongEast.count > 0) {
-    const pct = Math.round((strongEast.pctSum / strongEast.count) * 100);
-    placeLabel(
-      strongEast.sumLat / strongEast.count,
-      strongEast.sumLng / strongEast.count,
-      `<span class="heatmap-label-inner east-label">${pct}%<span class="heatmap-label-sub">say east</span></span>`
-    );
-  }
-  if (strongWest.count > 0) {
-    const pct = Math.round(((1 - strongWest.pctSum / strongWest.count)) * 100);
-    placeLabel(
-      strongWest.sumLat / strongWest.count,
-      strongWest.sumLng / strongWest.count,
-      `<span class="heatmap-label-inner west-label">${pct}%<span class="heatmap-label-sub">say west</span></span>`
-    );
-  }
-  if (contested.count > 0) {
-    const eastPct = Math.round((contested.pctSum / contested.count) * 100);
+  for (const b of bands.values()) {
+    const eastPct = Math.round((b.e / b.total) * 100);
     const westPct = 100 - eastPct;
-    placeLabel(
-      contested.sumLat / contested.count,
-      contested.sumLng / contested.count,
-      `<span class="heatmap-label-inner contested-label">${westPct}% west / ${eastPct}% east<span class="heatmap-label-sub">contested</span></span>`
-    );
+    const lat = b.sumLat / b.count;
+    const lng = b.sumLng / b.count;
+
+    let html;
+    if (eastPct === 100) {
+      html = `<span class="heatmap-label-inner east-label">100%<span class="heatmap-label-sub">say east</span></span>`;
+    } else if (westPct === 100) {
+      html = `<span class="heatmap-label-inner west-label">100%<span class="heatmap-label-sub">say west</span></span>`;
+    } else {
+      html = `<span class="heatmap-label-inner contested-label">${westPct}% west / ${eastPct}% east<span class="heatmap-label-sub">contested</span></span>`;
+    }
+    placeLabel(lat, lng, html);
   }
 }
 
