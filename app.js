@@ -233,8 +233,8 @@ function updateHeatmapLabels(eastCounts, westCounts) {
   // Find centroid of east-majority cells and west-majority cells,
   // and compute overall east% and west% across all cells with data.
   let totalEast = 0, totalWest = 0;
-  let eastSumLng = 0, eastSumLat = 0, eastCellCount = 0;
-  let westSumLng = 0, westSumLat = 0, westCellCount = 0;
+  let eastSumLng = 0, eastSumLat = 0, eastCellCount = 0, eastPctSum = 0;
+  let westSumLng = 0, westSumLat = 0, westCellCount = 0, westPctSum = 0;
 
   const total = GRID_COLS * GRID_ROWS;
   for (let i = 0; i < total; i++) {
@@ -245,15 +245,26 @@ function updateHeatmapLabels(eastCounts, westCounts) {
     totalWest += w;
     const lng = cellCentroids[i * 2];
     const lat = cellCentroids[i * 2 + 1];
-    if (e >= w) { eastSumLng += lng; eastSumLat += lat; eastCellCount++; }
-    else        { westSumLng += lng; westSumLat += lat; westCellCount++; }
+    const cellEastPct = e / (e + w);
+    if (e >= w) {
+      eastSumLng += lng; eastSumLat += lat; eastCellCount++;
+      eastPctSum += cellEastPct;
+    } else {
+      westSumLng += lng; westSumLat += lat; westCellCount++;
+      westPctSum += (1 - cellEastPct);
+    }
   }
 
   const grandTotal = totalEast + totalWest;
   if (grandTotal === 0) return;
 
-  const overallEastPct  = Math.round((totalEast / grandTotal) * 100);
-  const overallWestPct  = 100 - overallEastPct;
+  // Overall split for the legend bar
+  const overallEastPct = Math.round((totalEast / grandTotal) * 100);
+  const overallWestPct = 100 - overallEastPct;
+
+  // Per-region average percentage (what cells in that region actually agree on)
+  const eastLabelPct = eastCellCount > 0 ? Math.round((eastPctSum / eastCellCount) * 100) : 0;
+  const westLabelPct = westCellCount > 0 ? Math.round((westPctSum / westCellCount) * 100) : 0;
 
   // Update the header legend bar
   document.getElementById('legend').classList.add('hidden');
@@ -280,14 +291,14 @@ function updateHeatmapLabels(eastCounts, westCounts) {
     placeLabel(
       eastSumLat / eastCellCount,
       eastSumLng / eastCellCount,
-      `<span class="heatmap-label-inner east-label">${overallEastPct}%<span class="heatmap-label-sub">say east</span></span>`
+      `<span class="heatmap-label-inner east-label">${eastLabelPct}%<span class="heatmap-label-sub">say east</span></span>`
     );
   }
   if (westCellCount > 0) {
     placeLabel(
       westSumLat / westCellCount,
       westSumLng / westCellCount,
-      `<span class="heatmap-label-inner west-label">${overallWestPct}%<span class="heatmap-label-sub">say west</span></span>`
+      `<span class="heatmap-label-inner west-label">${westLabelPct}%<span class="heatmap-label-sub">say west</span></span>`
     );
   }
 }
