@@ -105,7 +105,8 @@ function refreshLabels() {
         icon: L.divIcon({
           className: 'neighbourhood-label',
           html: buildLabel(name),
-          iconSize: null,
+          iconSize: [0, 0],
+          iconAnchor: [0, 0],
         }),
       }).addTo(map);
       labelLayers[i] = newMarker;
@@ -118,7 +119,8 @@ function refreshLabels() {
       marker.setIcon(L.divIcon({
         className: 'neighbourhood-label',
         html: buildLabel(name),
-        iconSize: null,
+        iconSize: [0, 0],
+          iconAnchor: [0, 0],
       }));
     }
   });
@@ -223,7 +225,8 @@ function renderNeighbourhoods() {
       icon: L.divIcon({
         className: 'neighbourhood-label',
         html: buildLabel(name),
-        iconSize: null,
+        iconSize: [0, 0],
+          iconAnchor: [0, 0],
       }),
     }).addTo(map);
     labelLayers.push(marker);

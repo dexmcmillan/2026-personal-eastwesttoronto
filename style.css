@@ -194,6 +194,7 @@ button:active {
   transition: opacity 0.2s;
   line-height: 1.2;
   text-align: center;
+  transform: translate(-50%, -50%);
 }
 
 .neighbourhood-label .pct {
