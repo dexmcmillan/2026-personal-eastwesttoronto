@@ -370,7 +370,7 @@ document.getElementById('btn-submit').addEventListener('click', async () => {
 
   await setDoc(doc(db, 'submissions', userId), {
     timestamp: new Date().toISOString(),
-    line: drawnPoints,
+    line: drawnPoints.map(([lat, lng]) => ({ lat, lng })),
     east: lastClassified.east,
     west: lastClassified.west,
   });
