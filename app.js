@@ -247,11 +247,17 @@ async function loadAggregates() {
 
     if (!hasSubmitted) return;
 
+    // Convert {lng, lat} objects back to [lng, lat] arrays for Turf in worker
+    const toArrays = ring => ring.map(p => [p.lng, p.lat]);
+
     const submissions = [];
     snapshot.forEach(docSnap => {
       const d = docSnap.data();
       if (d.eastPolygon && d.westPolygon) {
-        submissions.push({ east: d.eastPolygon, west: d.westPolygon });
+        submissions.push({
+          east: toArrays(d.eastPolygon),
+          west: toArrays(d.westPolygon),
+        });
       }
     });
 
@@ -535,9 +541,12 @@ document.getElementById('btn-submit').addEventListener('click', async () => {
   btn.disabled = true;
   btn.textContent = 'Submitting...';
 
+  // Firestore doesn't support nested arrays — store coords as {lng, lat} objects
+  const toObjects = ring => ring.map(([lng, lat]) => ({ lng, lat }));
+
   await setDoc(doc(db, COLLECTION, userId), {
-    eastPolygon: splitResult.east,
-    westPolygon: splitResult.west,
+    eastPolygon: toObjects(splitResult.east),
+    westPolygon: toObjects(splitResult.west),
     ts: serverTimestamp(),
   });
 
