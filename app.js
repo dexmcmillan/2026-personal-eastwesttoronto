@@ -53,6 +53,7 @@ let isDrawing = false;
 let drawnPoints = [];
 let drawnPolyline = null;
 let lastClassified = null;
+let hasSubmitted = localStorage.getItem('eastwest_submitted') === 'true';
 
 // ── UUID (per-browser identity for deduplication) ──────────────────────────
 function getUserId() {
@@ -234,6 +235,9 @@ function renderNeighbourhoods() {
 }
 
 function styleForNeighbourhood(name) {
+  if (!hasSubmitted) {
+    return { fillColor: COLOUR_NEUTRAL, fillOpacity: 0.08, color: '#888', weight: 1.5 };
+  }
   const agg = aggregates[name];
   if (!agg || (agg.east === 0 && agg.west === 0)) {
     return { fillColor: COLOUR_NEUTRAL, fillOpacity: 0.02, color: '#888', weight: 1.5 };
@@ -251,7 +255,7 @@ const LABEL_CHAR_WIDTH = 6.2; // approx px per character at 11px Inter
 const LABEL_LINE_HEIGHT = 14; // px per line
 
 function buildLabel(name) {
-  const agg = aggregates[name];
+  const agg = hasSubmitted ? aggregates[name] : null;
   const pctHtml = (agg && (agg.east + agg.west) > 0)
     ? `<span class="pct">${Math.round((agg.east / (agg.east + agg.west)) * 100)}% East</span>`
     : '';
@@ -483,6 +487,9 @@ document.getElementById('btn-submit').addEventListener('click', async () => {
   const toast = document.getElementById('toast');
   toast.classList.remove('hidden');
   setTimeout(() => toast.classList.add('hidden'), 3000);
+
+  hasSubmitted = true;
+  localStorage.setItem('eastwest_submitted', 'true');
 
   await loadAggregates();
 
