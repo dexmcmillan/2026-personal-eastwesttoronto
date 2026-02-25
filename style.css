@@ -168,19 +168,15 @@ button:active {
 }
 
 #legend-gradient-bar {
-  height: 10px;
+  height: 20px;
   border-radius: 5px;
-  background: linear-gradient(to right, rgb(74,144,217), rgb(149,134,137), rgb(224,123,57));
   width: 100%;
+  display: flex;
+  overflow: hidden;
 }
 
 #legend-gradient-labels {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 4px;
-  font-size: 0.68rem;
-  font-weight: 500;
-  color: rgba(255,255,255,0.6);
+  display: none;
 }
 
 /* ── Heatmap percentage labels ── */

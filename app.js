@@ -262,7 +262,58 @@ function updateHeatmapLabels(eastCounts, westCounts) {
   const grandTotal = totalEast + totalWest;
   if (grandTotal === 0) return;
 
-  // Show the gradient legend bar
+  // ── Build chunked legend ───────────────────────────────────────────────
+  // Sort bands west→east by east fraction, then render one chunk per band
+  // sized proportionally by cell count.
+  const sortedBands = [...bands.entries()]
+    .map(([key, b]) => ({ key, eastFrac: b.e / b.total, count: b.count }))
+    .sort((a, b) => a.eastFrac - b.eastFrac);
+
+  const totalCells = sortedBands.reduce((s, b) => s + b.count, 0);
+
+  const bar = document.getElementById('legend-gradient-bar');
+  bar.innerHTML = '';
+  bar.style.background = 'none';  // override the CSS gradient
+
+  for (const band of sortedBands) {
+    const pct = (band.count / totalCells) * 100;
+    const colour = lerpColour(COLOUR_WEST_RGB, COLOUR_EAST_RGB, band.eastFrac);
+    const eastPct = Math.round(band.eastFrac * 100);
+    const label = eastPct === 0   ? '100% W'
+                : eastPct === 100 ? '100% E'
+                : `${100 - eastPct}/${eastPct}`;
+
+    const chunk = document.createElement('div');
+    chunk.style.cssText = `
+      flex: 0 0 ${pct}%;
+      background: ${colour};
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      min-width: 0;
+    `;
+
+    // Only show label if chunk is wide enough to hold text
+    if (pct > 6) {
+      const span = document.createElement('span');
+      span.textContent = label;
+      span.style.cssText = `
+        font-size: 0.6rem;
+        font-weight: 600;
+        color: #fff;
+        white-space: nowrap;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+        overflow: hidden;
+        pointer-events: none;
+      `;
+      chunk.appendChild(span);
+    }
+    bar.appendChild(chunk);
+  }
+
+  document.getElementById('legend-gradient-labels').style.display = 'none';
   document.getElementById('legend-results').classList.remove('hidden');
 
   function placeLabel(lat, lng, html) {
