@@ -179,6 +179,24 @@ button:active {
   display: none;
 }
 
+#btn-clear-results {
+  margin-top: 6px;
+  padding: 4px 12px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  background: rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.6);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px;
+  cursor: pointer;
+  width: 100%;
+}
+
+#btn-clear-results:hover {
+  background: rgba(255,255,255,0.18);
+  color: rgba(255,255,255,0.85);
+}
+
 /* ── Heatmap percentage labels ── */
 .heatmap-label {
   background: transparent !important;

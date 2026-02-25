@@ -709,6 +709,10 @@ document.getElementById('btn-redraw').addEventListener('click', () => {
   if (hasSubmitted) loadAggregates();
 });
 
+document.getElementById('btn-clear-results').addEventListener('click', () => {
+  clearHeatmap();
+});
+
 document.getElementById('btn-submit').addEventListener('click', async () => {
   if (!splitResult) return;
 
