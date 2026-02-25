@@ -269,14 +269,13 @@ function updateHeatmapLabels(eastCounts, westCounts) {
     .map(([key, b]) => ({ key, eastFrac: b.e / b.total, count: b.count }))
     .sort((a, b) => a.eastFrac - b.eastFrac);
 
-  const totalCells = sortedBands.reduce((s, b) => s + b.count, 0);
-
   const bar = document.getElementById('legend-gradient-bar');
   bar.innerHTML = '';
   bar.style.background = 'none';  // override the CSS gradient
 
+  const pct = 100 / sortedBands.length;
+
   for (const band of sortedBands) {
-    const pct = (band.count / totalCells) * 100;
     const colour = lerpColour(COLOUR_WEST_RGB, COLOUR_EAST_RGB, band.eastFrac);
     const eastPct = Math.round(band.eastFrac * 100);
     const label = eastPct === 0   ? '100% W'
