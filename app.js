@@ -53,7 +53,7 @@ map.createPane('labelsPane');
 map.getPane('labelsPane').style.zIndex = 650;
 map.getPane('labelsPane').style.pointerEvents = 'none';
 
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
+L.tileLayer('https://{s}.basemaps.cartocdn.com/voyager_only_labels/{z}/{x}/{y}{r}.png', {
   maxZoom: 19,
   opacity: 1,
   pane: 'labelsPane',
@@ -160,7 +160,7 @@ const HeatmapCanvasLayer = L.Layer.extend({
 
         const eastPct = e / total;
         ctx.fillStyle = lerpColour(COLOUR_WEST_RGB, COLOUR_EAST_RGB, eastPct);
-        ctx.globalAlpha = 0.4;
+        ctx.globalAlpha = 0.25;
         // Use floor for position and ceil+1 for size to ensure cells are flush
         const px = Math.floor(c * cellW);
         const py = Math.floor(canvasRow * cellH);
