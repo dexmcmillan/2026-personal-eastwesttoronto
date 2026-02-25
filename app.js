@@ -263,10 +263,17 @@ function updateHeatmapLabels(eastCounts, westCounts) {
   if (grandTotal === 0) return;
 
   // ── Build chunked legend ───────────────────────────────────────────────
-  // Sort bands west→east by east fraction, then render one chunk per band
-  // sized proportionally by cell count.
-  const sortedBands = [...bands.entries()]
-    .map(([key, b]) => ({ key, eastFrac: b.e / b.total, count: b.count }))
+  // Merge bands that round to the same east percentage, then sort west→east.
+  const mergedBands = new Map(); // key: rounded eastPct integer
+  for (const [, b] of bands.entries()) {
+    const eastPct = Math.round((b.e / b.total) * 100);
+    if (!mergedBands.has(eastPct)) {
+      mergedBands.set(eastPct, { eastFrac: b.e / b.total, count: 0 });
+    }
+    mergedBands.get(eastPct).count += b.count;
+  }
+  const sortedBands = [...mergedBands.entries()]
+    .map(([eastPct, m]) => ({ eastPct, eastFrac: m.eastFrac, count: m.count }))
     .sort((a, b) => a.eastFrac - b.eastFrac);
 
   const bar = document.getElementById('legend-gradient-bar');
@@ -277,7 +284,7 @@ function updateHeatmapLabels(eastCounts, westCounts) {
 
   for (const band of sortedBands) {
     const colour = lerpColour(COLOUR_WEST_RGB, COLOUR_EAST_RGB, band.eastFrac);
-    const eastPct = Math.round(band.eastFrac * 100);
+    const { eastPct } = band;
     const label = eastPct === 0   ? '100% W'
                 : eastPct === 100 ? '100% E'
                 : `${100 - eastPct}/${eastPct}`;
