@@ -164,7 +164,7 @@ button:active {
 }
 
 #legend-results.hidden {
-  display: none;
+  visibility: hidden;
 }
 
 #legend-gradient-bar {
